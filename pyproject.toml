@@ -1,0 +1,20 @@
+[project]
+name = "market-monitor"
+version = "0.1.0"
+description = "Global market monitoring system with A-share, HK, US market coverage"
+authors = [{name = "Steven"}]
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+market-monitor = "market_monitor.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["market_monitor*"]

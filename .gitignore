@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# 本地配置（含敏感信息）
+config/config.yaml
+config/config.local.yaml
+
+# 日志和状态
+logs/
+*.log
+*.err
+state/
+.state/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 状态文件（运行时生成）
+/tmp/*_state.json

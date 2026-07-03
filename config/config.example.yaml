@@ -1,0 +1,143 @@
+# 通用配置
+common:
+  # 飞书用户 open_id
+  feishu_user_id: "YOUR_OPEN_ID"
+  # 状态文件目录
+  state_dir: "/tmp"
+  # 日志目录
+  log_dir: "~/projects/market-monitor/logs"
+
+# ========================================
+# A股企稳信号监控
+# ========================================
+stabilize:
+  enabled: true
+  # 监控的指数
+  symbols:
+    - {code: sh000001, name: 上证指数}
+    - {code: sz399006, name: 创业板指}
+  # 命中几个信号才推送
+  min_signals: 2
+  # 每日首次运行是否附带防御性资产快照
+  include_defensive: true
+
+# ========================================
+# 关键点位监控
+# ========================================
+price_alert:
+  enabled: true
+  targets:
+    - code: s_sh000001
+      name: 上证指数
+      stop_loss: 3907
+      add_position: 4318
+    - code: s_sz399006
+      name: 创业板指
+      stop_loss: 4048
+      add_position: 4474
+    - code: nf_AU0
+      name: 沪金主力
+      stop_loss: 844
+      add_position: 932
+      is_gold: true
+
+# ========================================
+# 美股夜盘监控（北京时间 21:30-次日04:00）
+# ========================================
+us_market:
+  enabled: true
+  alert_index_pct: 1.5      # 指数波动阈值
+  alert_stock_pct: 3.0      # 个股波动阈值
+  indices:
+    - {code: int_dji,    name: 道琼斯}
+    - {code: int_nasdaq, name: 纳斯达克}
+    - {code: int_sp500,  name: 标普500}
+  stocks:
+    - {code: gb_pdd,  name: 拼多多}
+    - {code: gb_baba, name: 阿里巴巴}
+    - {code: gb_bidu, name: 百度}
+    - {code: gb_jd,   name: 京东}
+    - {code: gb_bili, name: B站}
+    - {code: gb_nvda, name: 英伟达}
+    - {code: gb_tsm,  name: 台积电}
+    - {code: gb_msft, name: 微软}
+    - {code: gb_aapl, name: 苹果}
+    - {code: gb_tsla, name: 特斯拉}
+
+# ========================================
+# 港股监控（9:30-16:00）
+# ========================================
+hk_market:
+  enabled: true
+  alert_index_pct: 1.5
+  alert_stock_pct: 3.0
+  indices:
+    - {code: hkHSI,    name: 恒生指数}
+    - {code: hkHSTECH, name: 恒生科技}
+    - {code: hkHSCEI,  name: 恒生国企}
+  stocks:
+    - {code: hk00700, name: 腾讯控股}
+    - {code: hk03690, name: 美团-W}
+    - {code: hk01810, name: 小米集团}
+    - {code: hk00981, name: 中芯国际}
+    - {code: hk01211, name: 比亚迪股份}
+    - {code: hk09988, name: 阿里巴巴-SW}
+    - {code: hk09618, name: 京东集团-SW}
+    - {code: hk09999, name: 网易-S}
+
+# ========================================
+# A股异常波动预警
+# ========================================
+shock:
+  enabled: true
+  # 分级预警阈值 [注意, 警戒, 严重]
+  thresholds: [1.5, 2.5, 3.5]
+  # 板块异动阈值
+  sector_threshold: 4.0
+  indices:
+    - {code: s_sh000001, name: 上证指数}
+    - {code: s_sz399006, name: 创业板指}
+    - {code: s_sh000300, name: 沪深300}
+    - {code: s_sz399001, name: 深证成指}
+    - {code: s_sh000905, name: 中证500}
+    - {code: s_sh000852, name: 中证1000}
+    - {code: s_sh000688, name: 科创50}
+
+# ========================================
+# 防御性资产（企稳信号触发时推荐）
+# ========================================
+defensive_assets:
+  - {code: sh518880, name: 黄金ETF华安,      category: 黄金/避险}
+  - {code: sh510880, name: 红利ETF华泰柏瑞,  category: 红利高股息}
+  - {code: sh512890, name: 红利低波,         category: 红利低波}
+  - {code: sh515170, name: 食品饮料ETF,      category: 消费防御}
+  - {code: sh510300, name: 沪深300ETF,       category: 大盘蓝筹}
+  - {code: sh600900, name: 长江电力,         category: 公用事业}
+  - {code: sh513100, name: 纳指ETF,          category: 海外分散}
+
+# 建议配置比例（企稳期）
+defensive_allocation:
+  黄金: 30
+  红利: 30
+  消费: 20
+  现金: 20
+
+# ========================================
+# 晨报 / 盘后报告（迁移自 stock_morning_report.py / stock_evening_report.py）
+# ========================================
+morning_report:
+  enabled: true
+  use_ai: true
+
+evening_report:
+  enabled: true
+  use_ai: true
+
+# ========================================
+# AI 分析
+# ========================================
+ai:
+  enabled: true
+  provider: custom
+  model: deepseek-v4-flash
+  # base_url / api_key 从 ~/.openclaw/openclaw.json 读取

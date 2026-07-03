@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 安装 launchd 任务（不影响老的 com.openclaw.* 任务）
+# 安装 launchd 任务
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

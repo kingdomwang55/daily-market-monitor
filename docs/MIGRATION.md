@@ -3,7 +3,7 @@
 ## 2026-07-03 - 项目初始化 + 从 workspace/scripts/ 迁移
 
 ### 起因
-散落在 `~/.openclaw/workspace/scripts/` 的多个监控脚本存在以下问题：
+散落在 workspace/scripts/ 的多个监控脚本存在以下问题：
 - 代码重复（每个脚本都自己写飞书发送、状态管理、数据获取）
 - 凭据硬编码/写死 USER_ID
 - 阈值、监控标的写死在代码里
@@ -30,7 +30,7 @@
 | （复用数据源） | `market_monitor/core/data_source.py` |
 | （复用状态） | `market_monitor/core/state.py` |
 | （复用配置） | `market_monitor/core/config.py` |
-| `~/Library/LaunchAgents/com.openclaw.*.plist` | `launchd/com.market-monitor.*.plist` |
+| `~/Library/LaunchAgents/com.*.plist` | `launchd/com.market-monitor.*.plist` |
 
 ### 未迁移（暂保留在 workspace）
 - `stock_morning_report.py` - 晨报（AI 集成较复杂，Phase 2 迁移）
@@ -46,7 +46,7 @@
 ### 验证清单
 - [x] 5 个 monitor 手动跑通（`cli run <name>`）
 - [x] YAML 配置加载正确
-- [x] 飞书凭据从 openclaw.json 自动加载
+- [x] 飞书凭据从 config.yaml 加载（支持环境变量覆盖）
 - [x] launchd plist 自动生成
 - [ ] 老任务并行运行观察 3 天（切换前）
 - [ ] git init + push 到 GitHub

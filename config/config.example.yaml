@@ -140,4 +140,4 @@ ai:
   enabled: true
   provider: custom
   model: deepseek-v4-flash
-  # base_url / api_key 从 ~/.openclaw/openclaw.json 读取
+  # base_url / api_key 从 config.yaml 或环境变量读取

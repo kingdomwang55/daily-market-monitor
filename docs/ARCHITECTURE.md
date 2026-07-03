@@ -53,8 +53,9 @@ launchd → python -m market_monitor.cli run <name>
 所有 monitor 的 state 都在 `/tmp/{name}_state.json`，`State` 类统一管理。
 
 ### 2. 配置分离
-- 结构化配置：`config/config.yaml` (git tracked，公开)
-- 敏感凭据：`~/.openclaw/openclaw.json` (系统级，不入 repo)
+- 结构化配置：`config/config.yaml` (本地，不入 git，含凭据)
+- 模板：`config/config.example.yaml` (git tracked，占位符)
+- 凭据也可通过环境变量覆盖: `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `AI_BASE_URL` / `AI_API_KEY`
 
 ### 3. 触发-静默模式
 默认静默运行，只在满足以下条件才推送：

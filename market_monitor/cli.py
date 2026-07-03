@@ -32,9 +32,7 @@ def cmd_status(args):
         print(f"{'PID':<8} {'Status':<8} {'Label':<40}")
         print("-" * 60)
         for line in out.splitlines():
-            if "openclaw.market" in line or "openclaw.stock" in line \
-               or "openclaw.price" in line or "openclaw.stabilize" in line \
-               or "openclaw.us-market" in line or "openclaw.hk-market" in line:
+            if "market-monitor" in line:
                 print(line)
     except Exception as e:
         print(f"错误: {e}", file=sys.stderr)
@@ -55,7 +53,7 @@ def cmd_logs(args):
         Path(f"/tmp/{args.name}.err"),
         Path(f"/tmp/{args.name}_alert.log"),
         Path(f"/tmp/{args.name}_alert.err"),
-        Path.home() / ".openclaw" / "workspace" / "logs" / f"{args.name}.log",
+        Path.home() / "projects" / "market-monitor" / "logs" / f"{args.name}.log",
     ]
     for p in log_paths:
         if p.exists():

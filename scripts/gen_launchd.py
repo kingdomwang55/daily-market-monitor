@@ -124,6 +124,18 @@ def main():
         build_plist_via_module("com.market-monitor.price-alert", "price_alert", schedule)
     )
 
+    # ===== 6. morning（晨报，每工作日 07:00） =====
+    schedule = make_calendar_schedule(weekday_range(weekdays, [(7, 0)]))
+    (LAUNCHD_DIR / "com.market-monitor.morning.plist").write_text(
+        build_plist_via_module("com.market-monitor.morning", "morning", schedule)
+    )
+
+    # ===== 7. evening（盘后报告，每工作日 17:00） =====
+    schedule = make_calendar_schedule(weekday_range(weekdays, [(17, 0)]))
+    (LAUNCHD_DIR / "com.market-monitor.evening.plist").write_text(
+        build_plist_via_module("com.market-monitor.evening", "evening", schedule)
+    )
+
     print("✅ plist 已生成到:", LAUNCHD_DIR)
     for f in sorted(LAUNCHD_DIR.glob("*.plist")):
         print(f"   {f.name}")

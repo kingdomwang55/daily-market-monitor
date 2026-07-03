@@ -4,6 +4,8 @@ from .us_market import UsMarketMonitor
 from .hk_market import HkMarketMonitor
 from .shock import ShockMonitor
 from .price_alert import PriceAlertMonitor
+from .morning import MorningMonitor
+from .evening import EveningMonitor
 
 REGISTRY = {
     m.name: m for m in [
@@ -12,6 +14,8 @@ REGISTRY = {
         HkMarketMonitor,
         ShockMonitor,
         PriceAlertMonitor,
+        MorningMonitor,
+        EveningMonitor,
     ]
 }
 

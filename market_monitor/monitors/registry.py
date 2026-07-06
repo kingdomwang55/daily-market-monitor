@@ -7,6 +7,7 @@ from .price_alert import PriceAlertMonitor
 from .morning import MorningMonitor
 from .evening import EveningMonitor
 from .voice_monitor import VoiceMonitor
+from .macro_monitor import MacroMonitor
 
 REGISTRY = {
     m.name: m for m in [
@@ -18,6 +19,7 @@ REGISTRY = {
         MorningMonitor,
         EveningMonitor,
         VoiceMonitor,
+        MacroMonitor,
     ]
 }
 

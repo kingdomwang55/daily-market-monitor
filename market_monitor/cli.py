@@ -250,6 +250,90 @@ def cmd_sync_log(args):
         print(markdown)
 
 
+def cmd_decision_extract(args):
+    """从推送日志中提取可检验命题"""
+    from .core import decision_tracker as dt
+    from datetime import datetime as _dt
+    date_str = args.date or _dt.now().strftime("%Y-%m-%d")
+    decisions = dt.extract_decisions(date_str)
+    if not decisions:
+        print(f"📭 {date_str} 未提取到可检验命题")
+        return
+    print(f"📋 {date_str} 提取 {len(decisions)} 条命题：\n")
+    for d in decisions:
+        dir_icon = {"bullish": "📈", "bearish": "📉", "neutral": "➖"}.get(d.get("direction", ""), "❓")
+        print(f"  [{d['id']}] {dir_icon} {d['claim']}")
+        print(f"         来源: {d.get('source_type','?')} | 时限: {d.get('timeframe','?')} | 置信度: {d.get('confidence','?')}")
+
+
+def cmd_decision_list(args):
+    """列出某天的决策（含校验结果）"""
+    from .core import decision_tracker as dt
+    from datetime import datetime as _dt
+    date_str = args.date or _dt.now().strftime("%Y-%m-%d")
+    decisions = dt.list_decisions(date_str)
+    if not decisions:
+        print(f"📭 {date_str} 暂无决策记录，先运行 market-monitor decision extract")
+        return
+
+    verdict_icon = {"hit": "✅", "miss": "❌", "partial": "⚠️", "n_a": "➖", None: "◻️"}
+    print(f"📋 {date_str} 共 {len(decisions)} 条决策：\n")
+    for d in decisions:
+        vi = verdict_icon.get(d.get("verdict"), "◻️")
+        print(f"  {vi} [{d['id']}] {d['claim']}")
+        if d.get("verdict_note"):
+            print(f"     ↳ {d['verdict_note']}")
+        if d.get("user_note"):
+            print(f"     💬 {d['user_note']}")
+        if d.get("user_action"):
+            print(f"     🎮 {'已执行' if d['user_action'] == 'did_i_act' else '未执行'}")
+
+
+def cmd_decision_mark(args):
+    """手动标记某条决策"""
+    from .core import decision_tracker as dt
+    ok = dt.mark_decision(
+        args.id,
+        verdict=args.verdict,
+        user_action=args.action,
+        user_note=args.note,
+    )
+    print(f"{'✅ 已标记' if ok else '❌ 未找到决策'} {args.id}")
+
+
+def cmd_decision_verify(args):
+    """校验某天的决策（拉市场实际数据比对）"""
+    from .core import decision_tracker as dt
+    from datetime import datetime as _dt
+    date_str = args.date or _dt.now().strftime("%Y-%m-%d")
+    decisions = dt.verify_decisions(date_str, reference_date=args.ref)
+    if not decisions:
+        print(f"📭 {date_str} 无决策可校验")
+        return
+    cmd_decision_list(args)  # 复用列表展示
+
+
+def cmd_decision_review(args):
+    """生成周报复盘"""
+    from .core import decision_tracker as dt
+    from datetime import datetime as _dt
+
+    if args.week:
+        start, end = dt.week_date_range()
+    else:
+        start = args.start or (_dt.now() - _dt.timedelta(days=7)).strftime("%Y-%m-%d")
+        end = args.end or _dt.now().strftime("%Y-%m-%d")
+
+    report = dt.format_weekly_review(start, end)
+
+    if args.push:
+        from .core.feishu import send_text
+        ok = send_text(report, push_type="weekly_review", meta={"start": start, "end": end})
+        print("✅ 已推送飞书" if ok else "❌ 推送失败")
+    else:
+        print(report)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -308,6 +392,37 @@ def main():
     p_sync.add_argument("--date", help="指定日期 YYYY-MM-DD（默认今天）")
     p_sync.add_argument("--out", help="输出到文件而非 stdout")
     p_sync.set_defaults(func=cmd_sync_log)
+
+    # decision
+    p_decision = sub.add_parser("decision", help="决策闭环追踪")
+    d_sub = p_decision.add_subparsers(dest="action", required=True)
+
+    d_extract = d_sub.add_parser("extract", help="从推送日志提取可检验命题")
+    d_extract.add_argument("--date", help="日期 YYYY-MM-DD（默认今天）")
+    d_extract.set_defaults(func=cmd_decision_extract)
+
+    d_list = d_sub.add_parser("list", help="列出决策（含校验结果）")
+    d_list.add_argument("--date", help="日期 YYYY-MM-DD（默认今天）")
+    d_list.set_defaults(func=cmd_decision_list)
+
+    d_mark = d_sub.add_parser("mark", help="手动标记某条决策")
+    d_mark.add_argument("id", help="决策 ID（如 2026-07-06-003）")
+    d_mark.add_argument("--verdict", choices=["hit", "miss", "partial", "n_a"], help="手动覆写裁决")
+    d_mark.add_argument("--action", choices=["did_i_act", "did_i_not_act", "n_a"], help="是否执行了操作")
+    d_mark.add_argument("--note", help="自由备注")
+    d_mark.set_defaults(func=cmd_decision_mark)
+
+    d_verify = d_sub.add_parser("verify", help="校验决策（拉市场实际数据比对）")
+    d_verify.add_argument("--date", help="决策日期 YYYY-MM-DD（默认今天）")
+    d_verify.add_argument("--ref", help="参考市场数据日期（默认今天）")
+    d_verify.set_defaults(func=cmd_decision_verify)
+
+    d_review = d_sub.add_parser("review", help="生成周报复盘")
+    d_review.add_argument("--week", action="store_true", help="本周复盘（默认）")
+    d_review.add_argument("--start", help="起始日期 YYYY-MM-DD")
+    d_review.add_argument("--end", help="结束日期 YYYY-MM-DD")
+    d_review.add_argument("--push", action="store_true", help="推送到飞书")
+    d_review.set_defaults(func=cmd_decision_review)
 
     args = parser.parse_args()
     args.func(args)

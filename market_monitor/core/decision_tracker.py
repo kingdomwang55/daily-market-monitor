@@ -13,7 +13,7 @@
 import json
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -383,6 +383,157 @@ def mark_decision(decision_id: str, verdict: Optional[str] = None,
 
 
 # ── 复盘报告 ─────────────────────────────────────────────
+
+def format_monthly_review(year: int, month: int) -> str:
+    """生成月度复盘 Markdown。
+
+    Args:
+        year: 四位年份
+        month: 1-12
+
+    Returns：月度胜率 + 按周趋势 + 最佳/最差判断 + 待回填区
+    """
+    from calendar import monthrange
+
+    _, last_day = monthrange(year, month)
+    start = date(year, month, 1)
+    end = date(year, month, last_day)
+    start_str = start.strftime("%Y-%m-%d")
+    end_str = end.strftime("%Y-%m-%d")
+
+    # 收集本月所有决策
+    all_decisions = []
+    cursor = start
+    while cursor <= end:
+        all_decisions.extend(_read_decisions(cursor.strftime("%Y-%m-%d")))
+        cursor += timedelta(days=1)
+
+    if not all_decisions:
+        return f"# 📅 月报复盘 · {year}-{month:02d}\n\n> 本月暂无决策记录。\n"
+
+    total = len(all_decisions)
+    verified = [d for d in all_decisions if d.get("verdict")]
+    hits = [d for d in verified if d["verdict"] == "hit"]
+    misses = [d for d in verified if d["verdict"] == "miss"]
+    partials = [d for d in verified if d["verdict"] == "partial"]
+    n_a = [d for d in verified if d["verdict"] == "n_a"]
+    hit_rate = len(hits) / max(len(verified), 1) * 100
+
+    lines = [
+        f"# 📅 月报复盘 · {year}-{month:02d}",
+        "",
+        f"时间范围：{start_str} → {end_str}",
+        "",
+        "## 🎯 本月成绩单",
+        "",
+        f"| 指标 | 数值 |",
+        f"|---|---|",
+        f"| 总命题数 | {total} |",
+        f"| 已校验 | {len(verified)} |",
+        f"| ✅ 命中 | {len(hits)} |",
+        f"| ❌ 失误 | {len(misses)} |",
+        f"| ⚠️ 部分正确 | {len(partials)} |",
+        f"| ➖ 无法判断 | {len(n_a)} |",
+        f"| **命中率** | **{hit_rate:.0f}%** |",
+        "",
+    ]
+
+    # 按周趋势
+    by_week = {}
+    for d in verified:
+        try:
+            dt_obj = datetime.strptime(d["date"], "%Y-%m-%d")
+            week_num = dt_obj.strftime("%W")
+            if week_num not in by_week:
+                by_week[week_num] = {"total": 0, "hit": 0}
+            by_week[week_num]["total"] += 1
+            if d["verdict"] == "hit":
+                by_week[week_num]["hit"] += 1
+        except Exception:
+            continue
+
+    if by_week:
+        lines.extend([
+            "## 📈 按周趋势",
+            "",
+            "| 周次 | 总数 | 命中 | 命中率 |",
+            "|---|---|---|---|",
+        ])
+        for wk in sorted(by_week.keys()):
+            stats = by_week[wk]
+            rate = stats["hit"] / max(stats["total"], 1) * 100
+            lines.append(
+                f"| W{wk} | {stats['total']} | {stats['hit']} | {rate:.0f}% |"
+            )
+        lines.append("")
+
+    # 按来源统计
+    by_source = {}
+    for d in verified:
+        src = d.get("source_type", "unknown")
+        by_source.setdefault(src, {"total": 0, "hit": 0})
+        by_source[src]["total"] += 1
+        if d["verdict"] == "hit":
+            by_source[src]["hit"] += 1
+
+    if by_source:
+        lines.extend([
+            "## 📡 按推送来源",
+            "",
+            "| 来源 | 总数 | 命中 | 命中率 |",
+            "|---|---|---|---|",
+        ])
+        for src, stats in sorted(by_source.items(), key=lambda x: -x[1]["total"]):
+            rate = stats["hit"] / max(stats["total"], 1) * 100
+            lines.append(
+                f"| `{src}` | {stats['total']} | {stats['hit']} | {rate:.0f}% |"
+            )
+        lines.append("")
+
+    # 巴能矩阵：方向 × 对象
+    lines.extend([
+        "## 🔍 亮点 & 坑",
+        "",
+    ])
+    if hits:
+        lines.append("### ✅ 命中亮点（前 5）")
+        for d in hits[:5]:
+            lines.append(f"- **[{d['id']}]** {d['claim']} — {d.get('verdict_note','')}")
+        lines.append("")
+    if misses:
+        lines.append(f"### ❌ 失误清单（共 {len(misses)} 条，前 10）")
+        for d in misses[:10]:
+            lines.append(f"- **[{d['id']}]** {d['claim']} — {d.get('verdict_note','')}")
+        lines.append("")
+
+    # 执行情况
+    acted = [d for d in all_decisions if d.get("user_action") == "did_i_act"]
+    not_acted = [d for d in all_decisions if d.get("user_action") == "did_i_not_act"]
+    if acted or not_acted:
+        lines.extend([
+            "## 🎮 执行情况",
+            "",
+            f"- 已执行: {len(acted)} 次",
+            f"- 未执行: {len(not_acted)} 次",
+            "",
+        ])
+
+    lines.extend([
+        "---",
+        "",
+        "## 📝 本月心得",
+        "",
+        "> 待回填：本月最大的胜利？最大的教训？下月改进？",
+        "",
+        "- **本月最好的判断**：",
+        "- **本月最大的失误**：",
+        "- **学到了什么**：",
+        "- **下月要改变什么**：",
+        "",
+    ])
+
+    return "\n".join(lines)
+
 
 def format_weekly_review(start_date: str, end_date: Optional[str] = None) -> str:
     """生成周报复盘 Markdown。

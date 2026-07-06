@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.market-monitor.monthly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$PROJECT_ROOT/.venv/bin/python</string>
+        <string>-m</string>
+        <string>market_monitor.cli</string>
+        <string>run</string>
+        <string>monthly</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$PROJECT_ROOT</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>$PROJECT_ROOT</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Day</key>
+            <integer>1</integer>
+            <key>Hour</key>
+            <integer>9</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/tmp/com.market-monitor.monthly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.market-monitor.monthly.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

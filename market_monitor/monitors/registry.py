@@ -9,6 +9,7 @@ from .evening import EveningMonitor
 from .voice_monitor import VoiceMonitor
 from .macro_monitor import MacroMonitor
 from .review import ReviewMonitor
+from .monthly import MonthlyMonitor
 
 REGISTRY = {
     m.name: m for m in [
@@ -22,6 +23,7 @@ REGISTRY = {
         VoiceMonitor,
         MacroMonitor,
         ReviewMonitor,
+        MonthlyMonitor,
     ]
 }
 

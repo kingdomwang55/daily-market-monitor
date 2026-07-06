@@ -5,6 +5,7 @@ import sys
 from typing import Optional
 
 from .config import get_config
+from .text_utils import strip_markdown
 from . import push_logger
 
 
@@ -16,6 +17,9 @@ def send_text(message: str, user_id: Optional[str] = None, push_type: str = "man
         user_id: 接收者 open_id（不传用 config 默认）
         push_type: 推送类型标签（morning/evening/price_alert/shock/stabilize/hk/us/health/manual...）
         meta: 附加元信息（会写入日志）
+
+    适配飞书 text 消息，自动清洗 markdown 符号（**加粗**、## 标题、
+    | 表格 | 、--- 分割线等）。
     """
     cfg = get_config()
     app_id = cfg.feishu_app_id
@@ -25,6 +29,9 @@ def send_text(message: str, user_id: Optional[str] = None, push_type: str = "man
     if not (app_id and app_secret and receive_id):
         print("[feishu] 缺少飞书凭据或 user_id", file=sys.stderr)
         return False
+
+    # 上钩前统一清洗 markdown 符号
+    message = strip_markdown(message)
 
     try:
         # 获取 tenant_access_token

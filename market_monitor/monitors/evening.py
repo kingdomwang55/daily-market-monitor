@@ -116,6 +116,17 @@ class EveningMonitor(BaseMonitor):
             if q:
                 result["overseas"][name] = q
 
+        # 泪深港通资金流（当日收盘值）
+        try:
+            result["south_latest"] = ds.fetch_south_flow_latest()
+            result["south_trend"] = ds.fetch_south_flow_trend(days=5)
+            result["north_deal"] = ds.fetch_north_deal_latest()
+        except Exception as e:
+            print(f"[evening] 资金流获取失败: {e}")
+            result["south_latest"] = None
+            result["south_trend"] = []
+            result["north_deal"] = None
+
         return result
 
     def _format_report(self, data):
@@ -187,6 +198,28 @@ class EveningMonitor(BaseMonitor):
                 unit = "%" if name == "美债10Y" else ""
                 lines.append(f"  {name:8s}: {price:>10.2f}{unit} ({pct:+.2f}%)")
 
+        # 泪深港通资金流
+        south = data.get("south_latest") or {}
+        north = data.get("north_deal") or {}
+        south_net = south.get("net") if south else None
+        if south_net is not None or north:
+            lines.append("\n【泪深港通资金流】")
+            if south_net is not None:
+                arrow = "🟢" if south_net >= 0 else "🔴"
+                lines.append(f"  南下资金  : {south_net:+.2f} 亿 {arrow}（{south.get('date','')}）")
+            north_deal = north.get("deal") if north else None
+            if north_deal is not None:
+                lines.append(f"  北向成交  : {north_deal:.0f} 亿")
+            trend = data.get("south_trend") or []
+            trend_nets = [t.get("net") for t in trend if t.get("net") is not None]
+            if trend_nets:
+                total = sum(trend_nets)
+                pos = sum(1 for n in trend_nets if n > 0)
+                neg = len(trend_nets) - pos
+                lines.append(
+                    f"  近{len(trend_nets)}日累计: {total:+.2f} 亿 ({pos}入/{neg}出)"
+                )
+
         return "\n".join(lines)
 
     def _build_ai_prompt(self, data):
@@ -237,6 +270,26 @@ class EveningMonitor(BaseMonitor):
                 pct = q.get("pct", 0)
                 unit = "%" if name == "美债10Y" else ""
                 facts.append(f"{name}: {price:.2f}{unit} ({pct:+.2f}%)")
+
+        # 泪深港通资金流（收盘确定值）
+        south = data.get("south_latest") or {}
+        north = data.get("north_deal") or {}
+        south_net = south.get("net") if south else None
+        if south_net is not None or north:
+            facts.append("\n== 泪深港通资金流 ==")
+            if south_net is not None:
+                direction = "流入" if south_net >= 0 else "流出"
+                facts.append(f"南下资金: 净{direction} {south_net:+.2f} 亿（{south.get('date','')}）")
+            north_deal = north.get("deal") if north else None
+            if north_deal is not None:
+                facts.append(f"北向成交额: {north_deal:.0f} 亿（注：净买入厣交所已停公布）")
+            trend = data.get("south_trend") or []
+            trend_nets = [t.get("net") for t in trend if t.get("net") is not None]
+            if trend_nets and len(trend_nets) >= 3:
+                total = sum(trend_nets)
+                pos = sum(1 for n in trend_nets if n > 0)
+                neg = len(trend_nets) - pos
+                facts.append(f"南下近{len(trend_nets)}日累计: {total:+.2f} 亿 ({pos}日净流入 / {neg}日净流出)")
 
         facts_text = "\n".join(facts)
         today = datetime.now().strftime("%Y-%m-%d %A")

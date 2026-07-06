@@ -1,7 +1,7 @@
 """港股监控"""
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
-from ..core.teaching import hk_teaching
+from ..core.teaching import hk_teaching, southbound_teaching
 
 
 class HkMarketMonitor(BaseMonitor):
@@ -75,6 +75,21 @@ class HkMarketMonitor(BaseMonitor):
                          f"HK${info['close']:.2f} {info['pct']:+.2f}%")
 
         parts.append(f"\n💡 A股先行指标 | 阈值: 指数 ±{alert_index}% / 个股 ±{alert_stock}%")
+
+        # 南下资金
+        try:
+            south_latest = ds.fetch_south_flow_latest()
+            south_trend = ds.fetch_south_flow_trend(days=5)
+            if south_latest:
+                net = south_latest.get("net")
+                if net is not None:
+                    arrow = "🟢" if net >= 0 else "🔴"
+                    parts.append(f"\n💰 南下资金（{south_latest.get('date','')}）")
+                    parts.append(f"{arrow} 净{('流入' if net >= 0 else '流出')} {net:+.2f} 亿")
+                parts.append("")
+                parts.append(southbound_teaching(south_latest, south_trend))
+        except Exception as e:
+            self.log(f"南下资金数据获取失败: {e}")
 
         # 教学解读
         index_pcts = [info["pct"] for _, info in indices]

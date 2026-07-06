@@ -453,3 +453,118 @@ def calc_week_change(symbol: str):
     except Exception as e:
         print(f"[week_change] {symbol} 失败: {e}", file=sys.stderr)
         return None
+
+
+# ============ 沪深港通资金流（东方财富）============
+# 港交所 2024-08 起停止公布北向实时净流入，仅保留成交额
+# 南向数据仍完整（净流入、买入、卖出、成交额）
+
+STOCK_CONNECT_URL = (
+    "https://datacenter-web.eastmoney.com/api/data/v1/get"
+    "?sortColumns=TRADE_DATE&sortTypes=-1&pageSize=60&pageNumber=1"
+    "&reportName=RPT_MUTUAL_DEAL_HISTORY&columns=ALL&source=WEB&client=WEB"
+)
+STOCK_CONNECT_HEADERS = {
+    "Referer": "https://data.eastmoney.com/",
+    "User-Agent": "Mozilla/5.0",
+}
+
+# MUTUAL_TYPE 映射
+_MUTUAL_TYPE_MAP = {
+    "001": ("north_sh", "北向沪股通"),
+    "003": ("north_sz", "北向深股通"),
+    "005": ("north_total", "北向汇总"),
+    "002": ("south_sh", "南向沪港通"),
+    "004": ("south_sz", "南向深港通"),
+    "006": ("south_total", "南向汇总"),
+}
+
+
+def fetch_stock_connect_history(days: int = 10) -> Dict[str, list]:
+    """拉取沪深港通近 N 日资金流历史。
+
+    返回结构：
+    {
+        "north_total": [{date, net, buy, sell, deal}, ...],  # 北向汇总（net 通常为 None）
+        "south_total": [{date, net, buy, sell, deal}, ...],  # 南向汇总
+        "north_sh": [...], "north_sz": [...],
+        "south_sh": [...], "south_sz": [...],
+    }
+    每类按日期倒序（最近日在前）。
+    单位：亿元。
+    """
+    try:
+        req = urllib.request.Request(STOCK_CONNECT_URL, headers=STOCK_CONNECT_HEADERS)
+        raw = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
+        payload = json.loads(raw)
+    except Exception as e:
+        print(f"[stock_connect] 请求失败: {e}", file=sys.stderr)
+        return {}
+
+    rows = ((payload.get("result") or {}).get("data")) or []
+    grouped: Dict[str, list] = {v[0]: [] for v in _MUTUAL_TYPE_MAP.values()}
+
+    for row in rows:
+        mt = row.get("MUTUAL_TYPE")
+        key_pair = _MUTUAL_TYPE_MAP.get(mt)
+        if not key_pair:
+            continue
+        key = key_pair[0]
+        date = (row.get("TRADE_DATE") or "")[:10]
+
+        def _to_yi(v):
+            # 东财接口返回百万元，需除 100 转为亿元
+            if v is None:
+                return None
+            try:
+                return round(float(v) / 100.0, 2)
+            except (TypeError, ValueError):
+                return None
+
+        item = {
+            "date": date,
+            "net": _to_yi(row.get("NET_DEAL_AMT")),
+            "buy": _to_yi(row.get("BUY_AMT")),
+            "sell": _to_yi(row.get("SELL_AMT")),
+            "deal": _to_yi(row.get("DEAL_AMT")),
+        }
+        grouped[key].append(item)
+
+    # 每类截取近 N 日（数据本身已按日期倒序）
+    for k in grouped:
+        grouped[k] = grouped[k][:days]
+    return grouped
+
+
+def fetch_south_flow_latest() -> Optional[Dict]:
+    """获取最近一个交易日的南向汇总资金流。
+
+    返回 {date, net, buy, sell, deal}，单位亿元。
+    net = 净买入（正=资金南下抄底港股 / 负=撤离港股）
+    """
+    hist = fetch_stock_connect_history(days=2)
+    south = hist.get("south_total") or []
+    if not south:
+        return None
+    return south[0]
+
+
+def fetch_south_flow_trend(days: int = 5) -> list:
+    """获取近 N 个交易日南向汇总资金流序列（时间正序：最早在前）。"""
+    hist = fetch_stock_connect_history(days=days)
+    south = hist.get("south_total") or []
+    # 反转为正序
+    return list(reversed(south))
+
+
+def fetch_north_deal_latest() -> Optional[Dict]:
+    """获取最近一个交易日的北向汇总成交额（净买入不再公布）。
+
+    返回 {date, deal}，单位亿元。
+    """
+    hist = fetch_stock_connect_history(days=2)
+    north = hist.get("north_total") or []
+    if not north:
+        return None
+    row = north[0]
+    return {"date": row["date"], "deal": row["deal"]}

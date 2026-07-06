@@ -459,3 +459,140 @@ def list_concepts():
         ("💹 资金流", ["north_capital", "north_south_capital"]),
     ]
     return groups
+
+
+# ═══════════════════════════════════════════════════════════
+# 沪深港通资金流（南向 / 北向）教学解读
+# ═══════════════════════════════════════════════════════════
+
+def _flow_scale(net_yi: float) -> str:
+    """把净流入亿元数值转成文字量级。"""
+    n = abs(net_yi)
+    if n < 20:
+        return "小幅"
+    if n < 50:
+        return "常规"
+    if n < 100:
+        return "较大"
+    return "巨额"
+
+
+def southbound_teaching(latest: dict, trend: list) -> str:
+    """南向资金教学解读。
+
+    latest = {date, net, buy, sell, deal}（亿元）
+    trend = 近 5 日南向汇总列表（时间正序）
+    """
+    parts = ["📚 南下资金解读"]
+
+    net = latest.get("net")
+    date = latest.get("date", "")
+
+    if net is None:
+        parts.append("最新交易日数据尚未公布。南向资金一般在当日收盘后 1-2 小时更新。")
+        return "\n".join(parts)
+
+    direction = "流入" if net >= 0 else "流出"
+    scale = _flow_scale(net)
+    arrow = "🟢" if net >= 0 else "🔴"
+
+    parts.append(
+        f"{arrow} 最新（{date}）：南向{direction} {net:+.2f} 亿（{scale}规模）"
+    )
+
+    # 教学第 1 段：定义
+    parts.append(
+        "\n南下资金 = 内地投资者通过港股通买卖港股的净额。"
+        "\n它反映内资对港股的态度，是港股最重要的资金面指标之一。"
+    )
+
+    # 教学第 2 段：方向含义
+    if net > 0:
+        parts.append(
+            f"\n本次{direction}的含义："
+            "\n• 内资看多港股（估值便宜 / A/H 溢价过大 / 港股独立行情预期）"
+            "\n• 主要买入方向常是：高股息（腾讯/银行）、AI/科技龙头、中概映射"
+            "\n• 强势期南向持续流入会推升港股相对 A 股走强"
+        )
+    else:
+        parts.append(
+            f"\n本次{direction}的含义："
+            "\n• 内资减仓港股（获利了结 / 风险偏好回落 / A股行情吸引资金回流）"
+            "\n• 持续流出通常预示港股短期承压，尤其对港股通个股影响明显"
+            "\n• 需警惕：内资撤退 + 外资观望 = 港股跌幅可能被放大"
+        )
+
+    # 教学第 3 段：趋势（近 5 日）
+    if trend and len(trend) >= 3:
+        nets = [t.get("net") for t in trend if t.get("net") is not None]
+        if nets:
+            total = sum(nets)
+            pos_days = sum(1 for n in nets if n > 0)
+            neg_days = len(nets) - pos_days
+            trend_arrow = "🟢" if total >= 0 else "🔴"
+            parts.append(
+                f"\n{trend_arrow} 近 {len(nets)} 个交易日累计：{total:+.2f} 亿"
+                f"（{pos_days} 日净流入 / {neg_days} 日净流出）"
+            )
+            if abs(total) >= 200:
+                if total > 0:
+                    parts.append(
+                        "→ 中期资金持续大幅南下，反映内资对港股结构性看好，属港股中期利好信号。"
+                    )
+                else:
+                    parts.append(
+                        "→ 中期资金持续大幅撤离，港股缺乏内资承接，需谨慎参与港股通标的。"
+                    )
+            elif pos_days >= 4:
+                parts.append("→ 近期南向以流入为主，港股情绪相对乐观。")
+            elif neg_days >= 4:
+                parts.append("→ 近期南向以流出为主，港股短期承压。")
+            else:
+                parts.append("→ 近期南向多空拉锯，港股方向不明。")
+
+    # 教学第 4 段：新手误区
+    parts.append(
+        "\n💡 观察要点："
+        "\n• 单日 ±20 亿以内属常态，无需大惊小怪"
+        "\n• 单日超过 ±100 亿要重视，通常伴随港股情绪拐点"
+        "\n• 南向 ≠ 港股必涨/跌，还要看外资、汇率、美股情绪"
+    )
+
+    return "\n".join(parts)
+
+
+def northbound_deal_teaching(deal_yi: float, date: str = "") -> str:
+    """北向成交额教学解读（净买入自 2024-08 起港交所停止公布）。"""
+    parts = ["📚 北上资金解读"]
+    if deal_yi is None:
+        parts.append("北向数据尚未公布。")
+        return "\n".join(parts)
+
+    parts.append(f"📊 {date}：北向沪深股通总成交额 {deal_yi:.0f} 亿")
+    parts.append(
+        "\n⚠️ 注意：港交所自 2024-08 起停止公布北向实时/日度净买入数据，"
+        "现在只能看到总成交额（买+卖）。"
+    )
+
+    if deal_yi >= 1500:
+        activity = "非常活跃"
+        comment = "外资参与度高，A 股通常伴随较大波动（涨跌方向要看盘面）"
+    elif deal_yi >= 1000:
+        activity = "活跃"
+        comment = "外资交易正常偏活跃"
+    elif deal_yi >= 500:
+        activity = "常态"
+        comment = "外资参与度一般"
+    else:
+        activity = "清淡"
+        comment = "外资观望，A 股可能缺乏外部驱动"
+
+    parts.append(f"\n交易活跃度：{activity} — {comment}")
+
+    parts.append(
+        "\n💡 观察要点："
+        "\n• 成交额只反映外资参与度，不代表方向"
+        "\n• 想判断外资态度需要结合：A 股/港股同步涨跌、汇率、DXY、离岸人民币"
+        "\n• 港股通北向 ETF/个股持仓变化仍可查（月度/季度披露）"
+    )
+    return "\n".join(parts)

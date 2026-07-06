@@ -50,7 +50,6 @@ class MorningMonitor(BaseMonitor):
         )
         mapping = ds.sina_map(all_codes)
         data = {}
-
         for code, name in self.A_INDICES:
             if code in mapping:
                 info = ds.parse_a_index_full(mapping[code])
@@ -88,6 +87,14 @@ class MorningMonitor(BaseMonitor):
             q = ds.yahoo_quote(symbol)
             if q:
                 data[name] = q
+
+        # 泪深港通资金流（昨日收盘确定值 + 近5日趋势）
+        try:
+            data["_south_latest"] = ds.fetch_south_flow_latest()
+            data["_south_trend"] = ds.fetch_south_flow_trend(days=5)
+            data["_north_deal"] = ds.fetch_north_deal_latest()
+        except Exception as e:
+            print(f"[morning] 资金流获取失败: {e}")
 
         return data
 
@@ -146,6 +153,29 @@ class MorningMonitor(BaseMonitor):
         parts.append("【汇市】")
         parts.append(_row("美元指数", "美元指数"))
 
+        # 泪深港通资金流
+        south = data.get("_south_latest") or {}
+        north = data.get("_north_deal") or {}
+        south_net = south.get("net") if south else None
+        if south_net is not None or north:
+            parts.append("")
+            parts.append("【泪深港通资金（昨日收盘）】")
+            if south_net is not None:
+                arrow = "🟢" if south_net >= 0 else "🔴"
+                parts.append(f"  南下资金  : {south_net:+.2f} 亿 {arrow}")
+            north_deal = north.get("deal") if north else None
+            if north_deal is not None:
+                parts.append(f"  北向成交  : {north_deal:.0f} 亿")
+            trend = data.get("_south_trend") or []
+            trend_nets = [t.get("net") for t in trend if t.get("net") is not None]
+            if trend_nets:
+                total = sum(trend_nets)
+                pos = sum(1 for n in trend_nets if n > 0)
+                neg = len(trend_nets) - pos
+                parts.append(
+                    f"  近{len(trend_nets)}日累计: {total:+.2f} 亿 ({pos}入/{neg}出)"
+                )
+
         return "\n".join(parts)
 
     def _build_ai_prompt(self, data):
@@ -186,6 +216,26 @@ class MorningMonitor(BaseMonitor):
         if us10y:
             facts.append(f"美债10Y收益率: {us10y['price']:.2f}% ({us10y['pct']:+.2f}%)")
 
+        # 泪深港通资金流（昨日收盘值 + 近5日趋势）
+        south = data.get("_south_latest") or {}
+        north = data.get("_north_deal") or {}
+        south_net = south.get("net") if south else None
+        if south_net is not None or north:
+            facts.append("\n== 泪深港通资金流（昨日收盘）==")
+            if south_net is not None:
+                direction = "流入" if south_net >= 0 else "流出"
+                facts.append(f"南下资金: 净{direction} {south_net:+.2f} 亿（{south.get('date','')}）")
+            north_deal = north.get("deal") if north else None
+            if north_deal is not None:
+                facts.append(f"北向成交额: {north_deal:.0f} 亿（净买入厣交所已停公布，仅成交额）")
+            trend = data.get("_south_trend") or []
+            trend_nets = [t.get("net") for t in trend if t.get("net") is not None]
+            if trend_nets and len(trend_nets) >= 3:
+                total = sum(trend_nets)
+                pos = sum(1 for n in trend_nets if n > 0)
+                neg = len(trend_nets) - pos
+                facts.append(f"南下近{len(trend_nets)}日累计: {total:+.2f} 亿 ({pos} 日净流入 / {neg} 日净流出)")
+
         facts_text = "\n".join(facts)
         today = datetime.now().strftime("%Y-%m-%d %A")
 
@@ -198,6 +248,9 @@ class MorningMonitor(BaseMonitor):
    - 基于隔夜美股/DXY/VIX/美债10Y，预判今日A股开盘/行业方向
    - 提前标注哪些是“教科书式联动”（如 VIX急升 → A股高开低走），哪些可能出现“反直觉”（如 美股跌但 A 股可能拉拓，因为国内新政策等）
    - 晚上盘后报告会回验这些判断
+   - 如数据中有泪深港通资金流，必须把昨日南下资金方向 + 近5日累计纳入港股开盘预判：
+     • 南下流入 = 内资看多港股，高股息/科技龙头可能旹盘受益
+     • 南下流出 = 内资撤退，港股短期承压，也会拖累 A 股同板块
 3. 有明确观点（不要“可能/或许”堆砌），基于数据讲逻辑
 4. 避免陈词滥调（“震荡整理”“谨慎观望”这类词请少用）
 5. 中文，总字数控制在 380-480 字

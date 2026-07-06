@@ -229,7 +229,7 @@ class VoiceMonitor(BaseMonitor):
         # AI 分析 + 打分
         prompt = self._build_ai_prompt(items)
         analysis = ai_chat(prompt, temperature=0.5, max_tokens=1200)
-        analysis = self._strip_markdown(analysis) if analysis else analysis
+        # 注：markdown 清洗已上提到 core.feishu.send_text，这里不再重复处理
 
         report = self._format_report(items, analysis)
 

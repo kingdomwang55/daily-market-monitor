@@ -1,6 +1,7 @@
 """A 股企稳信号监控 + 防御性资产快照"""
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
+from ..core.teaching import stabilize_teaching
 
 
 class StabilizeMonitor(BaseMonitor):
@@ -103,6 +104,7 @@ class StabilizeMonitor(BaseMonitor):
         # 是否有企稳
         push_stabilize = False
         stabilize_msg = ""
+        triggered_signals = []  # 收集命中信号名，用于教学解读
         for sym_name, info, signals in signals_all:
             key = f"stabilize_{info['symbol']}_{info['date']}"
             if len(signals) >= min_signals and not self.state.has(key):
@@ -111,6 +113,7 @@ class StabilizeMonitor(BaseMonitor):
                 stabilize_msg += f"日期: {info['date']}  收盘: {info['close']:.2f}  涨跌: {info['pct']:+.2f}%\n"
                 stabilize_msg += f"MA5: {info['ma5']:.2f}\n"
                 stabilize_msg += "命中信号:\n" + "\n".join(signals) + "\n"
+                triggered_signals.extend(signals)
                 self.state.set(key)
 
         # 每日首次防御快照
@@ -155,6 +158,11 @@ class StabilizeMonitor(BaseMonitor):
                 parts.append(watch_msg)
             if defensive_msg:
                 parts.append(defensive_msg)
+
+            # 企稳触发时附上教学解读
+            if push_stabilize and triggered_signals:
+                parts.append("")
+                parts.append(stabilize_teaching(triggered_signals))
 
             message = "\n".join(parts)
             if self.send(message):

@@ -1,8 +1,9 @@
-"""盘后市场报告（大盘+ETF+自选股+板块+异动榜+AI分析）"""
+"""盘后市场报告(大盘+ETF+自选股+板块+异动榜+AI分析)"""
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
 from ..core.ai import ai_chat
 from ..core.data_source import _to_float
+from ..core.teaching import get_daily_tip
 
 
 class EveningMonitor(BaseMonitor):
@@ -28,6 +29,21 @@ class EveningMonitor(BaseMonitor):
         ("sz300750", "宁德时代"),
     ]
 
+    # 国际市场(前一交易日收盘/最新)
+    OVERSEAS_SINA = [
+        ("gb_dji", "道琼斯", "us"),
+        ("gb_ixic", "纳斯达克", "us"),
+        ("gb_inx", "标普500", "us"),
+        ("hf_CL", "WTI原油", "hf"),
+        ("hf_SI", "COMEX白银", "hf"),
+        ("nf_AU0", "沪金主力", "nf"),
+        ("DINIW", "美元指数", "dxy"),
+    ]
+    OVERSEAS_YAHOO = [
+        ("^VIX", "VIX"),
+        ("^TNX", "美债10Y"),  # CBOE 10Y 国债收益率指数,直接就是百分比数值,如 4.485 = 4.485%
+    ]
+
     def _gather_all(self):
         """收集所有数据"""
         result = {
@@ -39,6 +55,7 @@ class EveningMonitor(BaseMonitor):
             "sectors_down": [],
             "top_gainers": [],
             "top_losers": [],
+            "overseas": {},
         }
 
         # 指数
@@ -74,6 +91,30 @@ class EveningMonitor(BaseMonitor):
         gainers, losers = ds.get_top_movers(count=5)
         result["top_gainers"] = gainers
         result["top_losers"] = losers
+
+        # 国际市场(新浪 + Yahoo)
+        sina_codes = [c for c, _, _ in self.OVERSEAS_SINA]
+        mapping = ds.sina_map(sina_codes)
+        for code, name, kind in self.OVERSEAS_SINA:
+            if code not in mapping:
+                continue
+            line = mapping[code]
+            info = None
+            if kind == "us":
+                info = ds.parse_us_v2(line)
+            elif kind == "hf":
+                info = ds.parse_hf_commodity(line)
+            elif kind == "nf":
+                info = ds.parse_nf_futures(line)
+            elif kind == "dxy":
+                info = ds.parse_dxy(line)
+            if info:
+                result["overseas"][name] = info
+
+        for symbol, name in self.OVERSEAS_YAHOO:
+            q = ds.yahoo_quote(symbol)
+            if q:
+                result["overseas"][name] = q
 
         return result
 
@@ -137,6 +178,15 @@ class EveningMonitor(BaseMonitor):
                 price = _to_float(x.get("trade", 0))
                 lines.append(f"  {name}({code}): {price:.2f} ({pct:+.2f}%)")
 
+        # 国际市场(前一交易日)
+        if data.get("overseas"):
+            lines.append("\n【前一交易日 · 国际市场】")
+            for name, q in data["overseas"].items():
+                price = q.get("price", q.get("close", 0))
+                pct = q.get("pct", 0)
+                unit = "%" if name == "美债10Y" else ""
+                lines.append(f"  {name:8s}: {price:>10.2f}{unit} ({pct:+.2f}%)")
+
         return "\n".join(lines)
 
     def _build_ai_prompt(self, data):
@@ -147,7 +197,7 @@ class EveningMonitor(BaseMonitor):
         facts.append("== 大盘 ==")
         for name, q in data["indices"].items():
             wk = data["week_changes"].get(name)
-            wk_str = f"（周累计{wk:+.2f}%）" if wk is not None else ""
+            wk_str = f"(周累计{wk:+.2f}%)" if wk is not None else ""
             facts.append(f"{name}: 收{q['close']:.2f}, 涨跌{q['pct']:+.2f}%{wk_str}")
 
         if data["etfs"]:
@@ -171,7 +221,7 @@ class EveningMonitor(BaseMonitor):
                 facts.append(f"{s.get('f14')}: {s.get('f3', 0):+.2f}%")
 
         if data["top_gainers"]:
-            facts.append("\n== 涨幅榜 TOP5（个股）==")
+            facts.append("\n== 涨幅榜 TOP5(个股)==")
             for x in data["top_gainers"]:
                 facts.append(f"{x.get('name')}: {_to_float(x.get('changepercent', 0)):+.2f}%")
 
@@ -179,6 +229,14 @@ class EveningMonitor(BaseMonitor):
             facts.append("\n== 跌幅榜 TOP5（个股）==")
             for x in data["top_losers"]:
                 facts.append(f"{x.get('name')}: {_to_float(x.get('changepercent', 0)):+.2f}%")
+
+        if data.get("overseas"):
+            facts.append("\n== 国际市场（前一交易日收盘）==")
+            for name, q in data["overseas"].items():
+                price = q.get("price", q.get("close", 0))
+                pct = q.get("pct", 0)
+                unit = "%" if name == "美债10Y" else ""
+                facts.append(f"{name}: {price:.2f}{unit} ({pct:+.2f}%)")
 
         facts_text = "\n".join(facts)
         today = datetime.now().strftime("%Y-%m-%d %A")
@@ -191,21 +249,28 @@ class EveningMonitor(BaseMonitor):
         stage_hint = ""
         if all_zero:
             stage_hint = (
-                '\n【重要提示】当前所有指数涨跌均为 0，'
-                '说明未开盘或数据接口异常，请直接回复：'
-                '"❗ 当前未开盘或行情数据未更新，无盘后内容可分析。"'
+                '\n【重要提示】当前所有指数涨跌均为 0,'
+                '说明未开盘或数据接口异常,请直接回复:'
+                '"❗ 当前未开盘或行情数据未更新,无盘后内容可分析。"'
                 '不要臆测任何结论。\n'
             )
 
         return f"""你是一位资深A股策略师，正在为一位既懂交易又忙碌的中国投资者写盘后深度报告。基于下方今日收盘数据，输出简洁、专业、有观点的分析。
 {stage_hint}
 要求：
-1. 4-5 段短评，覆盖：今日大盘特征、板块轮动逻辑、异动信号、自选股解读、明日操作建议
-2. 有明确观点（不要"可能/或许"堆砌），基于数据讲逻辑
-3. 避免陈词滥调（"震荡整理""谨慎观望"少用）
-4. 中文，总字数控制在 350-500 字
-5. 用【】标题分段，不要用 markdown 的 # 或 * 符号
-6. 若板块数据全为 0（说明未开盘），只做已有数据的分析，不要臆测
+1. 分 5 段，依次为：
+   【今日大盘特征】、【板块轮动逻辑】、【国际市场联动分析】、【异动/自选股解读】、【明日操作建议】
+2. 【国际市场联动分析】这一段非常关键，要求：
+   - 把前一交易日的国际市场（美股/大宗/DXY/VIX/美债10Y）与今日A股、行业板块、汇率表现逐条对映
+   - 分两类列出：
+     ✅ 正常联动：“→” 符号描述叠动关系（如：隔夜VIX回落10% → A股风险股大液）
+     ⚠️ 反直觉信号：列举“本应xxx 但实际xxx”的背离，并让你给出 1 句背后可能的逻辑（而不是“不确定”）
+   - 至少 3 条正常 + 1-2 条反直觉（确实没反直觉信号才可写“今日无明显背离”）
+3. 有明确观点（不要“可能/或许”堆砌），基于数据讲逻辑
+4. 避免陈词滥调（“震荡整理”“谨慎观望”少用）
+5. 中文，总字数 500-650 字
+6. 用【】标题分段，不要用 markdown 的 # 或 * 符号
+7. 若板块数据全为 0（未开盘），只做已有数据的分析，不要臆测
 
 今日日期：{today}
 
@@ -225,14 +290,17 @@ class EveningMonitor(BaseMonitor):
 
         # AI 分析
         prompt = self._build_ai_prompt(data)
-        analysis = ai_chat(prompt, temperature=0.7, max_tokens=1000)
+        analysis = ai_chat(prompt, temperature=0.7, max_tokens=1400)
 
         if analysis:
             report += f"\n\n━━━━━━━━━━━━━━━\n🤖 AI 市场解读\n\n{analysis}"
         else:
-            report += "\n\n（AI 分析暂不可用）"
+            report += "\n\n(AI 分析暂不可用)"
 
-        report += "\n\n（数据：新浪财经/东财 · 分析：AI）"
+        # 每日教学锦囊(轮换)
+        report += f"\n\n━━━━━━━━━━━━━━━\n{get_daily_tip()}"
+
+        report += "\n\n(数据:新浪财经/东财 · 分析:AI)"
 
         if self.send(report):
             self.state.set(daily_key)

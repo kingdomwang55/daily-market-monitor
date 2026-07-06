@@ -5,10 +5,18 @@ import sys
 from typing import Optional
 
 from .config import get_config
+from . import push_logger
 
 
-def send_text(message: str, user_id: Optional[str] = None) -> bool:
-    """发送纯文本消息到飞书"""
+def send_text(message: str, user_id: Optional[str] = None, push_type: str = "manual", meta: Optional[dict] = None) -> bool:
+    """发送纯文本消息到飞书
+
+    Args:
+        message: 消息内容
+        user_id: 接收者 open_id（不传用 config 默认）
+        push_type: 推送类型标签（morning/evening/price_alert/shock/stabilize/hk/us/health/manual...）
+        meta: 附加元信息（会写入日志）
+    """
     cfg = get_config()
     app_id = cfg.feishu_app_id
     app_secret = cfg.feishu_app_secret
@@ -46,6 +54,8 @@ def send_text(message: str, user_id: Optional[str] = None) -> bool:
         )
         result = json.loads(send_r.stdout)
         if result.get("code") == 0:
+            # 推送成功后同步写日志（失败不影响主链路）
+            push_logger.append(message, push_type=push_type, meta=meta)
             return True
         print(f"[feishu] 发送失败: {result}", file=sys.stderr)
         return False

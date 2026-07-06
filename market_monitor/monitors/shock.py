@@ -1,6 +1,7 @@
 """A 股异常波动预警"""
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
+from ..core.teaching import shock_teaching
 
 
 class ShockMonitor(BaseMonitor):
@@ -108,6 +109,11 @@ class ShockMonitor(BaseMonitor):
             parts.append("\n💡 警戒级别：注意仓位控制，观察是否有持续性")
         elif max_level >= 1:
             parts.append("\n💡 轻度波动：关注但不必操作")
+
+        # 教学解读
+        if max_level >= 1:
+            parts.append("")
+            parts.append(shock_teaching(max_level, bool(sector_alerts)))
 
         message = "\n".join(parts)
         if self.send(message):

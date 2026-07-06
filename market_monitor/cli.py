@@ -334,6 +334,54 @@ def cmd_decision_review(args):
         print(report)
 
 
+def cmd_decision_monthly(args):
+    """生成月报复盘"""
+    from .core import decision_tracker as dt
+    from datetime import datetime as _dt
+
+    if args.month:
+        year, month = map(int, args.month.split("-"))
+    else:
+        # 默认：上个月
+        now = _dt.now()
+        if now.month == 1:
+            year, month = now.year - 1, 12
+        else:
+            year, month = now.year, now.month - 1
+
+    report = dt.format_monthly_review(year, month)
+
+    if args.push:
+        from .core.feishu import send_text
+        ok = send_text(report, push_type="monthly_review", meta={"month": f"{year}-{month:02d}"})
+        print("✅ 已推送飞书" if ok else "❌ 推送失败")
+    else:
+        print(report)
+
+
+def cmd_calendar(args):
+    """查看宏观事件日历"""
+    from .core import calendar_events as cal
+
+    if args.month:
+        year, month = map(int, args.month.split("-"))
+        events = cal.in_month(year, month)
+        title = f"🗓️ {year}-{month:02d} 宏观日历"
+        show_days = False
+    else:
+        events = cal.upcoming(days=args.days)
+        title = f"🗓️ 未来 {args.days} 天宏观日历"
+        show_days = True
+
+    output = f"{title}\n\n{cal.format_events(events, show_days_from_now=show_days)}"
+    print(output)
+
+    if args.push:
+        from .core.feishu import send_text
+        ok = send_text(output, push_type="calendar", meta={"scope": args.month or f"{args.days}d"})
+        print("\n✅ 已推送飞书" if ok else "\n❌ 推送失败")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -423,6 +471,18 @@ def main():
     d_review.add_argument("--end", help="结束日期 YYYY-MM-DD")
     d_review.add_argument("--push", action="store_true", help="推送到飞书")
     d_review.set_defaults(func=cmd_decision_review)
+
+    d_monthly = d_sub.add_parser("monthly", help="生成月报复盘")
+    d_monthly.add_argument("--month", help="月份 YYYY-MM（默认上个月）")
+    d_monthly.add_argument("--push", action="store_true", help="推送到飞书")
+    d_monthly.set_defaults(func=cmd_decision_monthly)
+
+    # calendar
+    p_calendar = sub.add_parser("calendar", help="宏观事件日历")
+    p_calendar.add_argument("--days", type=int, default=7, help="未来多少天（默认 7）")
+    p_calendar.add_argument("--month", help="查某月完整日历 YYYY-MM")
+    p_calendar.add_argument("--push", action="store_true", help="推送到飞书")
+    p_calendar.set_defaults(func=cmd_calendar)
 
     args = parser.parse_args()
     args.func(args)

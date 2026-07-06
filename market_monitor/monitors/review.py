@@ -3,11 +3,13 @@
 流程：
 1. 自动 extract + verify 本周所有工作日的决策
 2. 生成周报复盘报告
-3. 推送到飞书
+3. 拼接下周宏观日历
+4. 推送到飞书
 """
 from ..core.base import BaseMonitor
 from ..core import decision_tracker as dt
 from ..core import push_logger
+from ..core import calendar_events as cal
 from datetime import datetime, timedelta
 
 
@@ -55,9 +57,34 @@ class ReviewMonitor(BaseMonitor):
             cursor += timedelta(days=1)
 
         # 2. 生成周报
-        report = dt.format_weekly_review(start, end)
+        review_report = dt.format_weekly_review(start, end)
 
-        # 3. 推送
+        # 3. 拼接下周宏观日历
+        next_monday = today + timedelta(days=1)
+        next_sunday = today + timedelta(days=7)
+        upcoming = cal.upcoming(
+            days=7,
+            from_date=next_monday.strftime("%Y-%m-%d"),
+        )
+
+        calendar_section = (
+            f"\n---\n\n"
+            f"## 🗓️ 下周日历（{next_monday.strftime('%m-%d')} → {next_sunday.strftime('%m-%d')}）\n\n"
+            f"{cal.format_events(upcoming)}\n"
+        )
+
+        # 如果本周仍有尚未发生的重大事件（未来 3 天内），也额外提醒
+        imminent = cal.upcoming(days=3)
+        imminent_high = [e for e in imminent if e["impact"] >= 4]
+        if imminent_high:
+            calendar_section += (
+                f"\n### ⚡ 未来 3 天重點\n\n"
+                f"{cal.format_events(imminent_high)}\n"
+            )
+
+        report = review_report + calendar_section
+
+        # 4. 推送
         if self.send(report, meta={"start": start, "end": end}):
             self.state.set(week_key)
             self.state.save()

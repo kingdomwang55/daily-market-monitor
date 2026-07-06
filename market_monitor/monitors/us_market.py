@@ -1,6 +1,7 @@
 """美股夜盘监控"""
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
+from ..core.teaching import us_teaching
 
 
 class UsMarketMonitor(BaseMonitor):
@@ -74,6 +75,11 @@ class UsMarketMonitor(BaseMonitor):
                          f"${info['close']:.2f} {info['pct']:+.2f}%")
 
         parts.append(f"\n💡 阈值: 指数 ±{alert_index}% / 个股 ±{alert_stock}%")
+
+        # 教学解读
+        index_pcts = [info["pct"] for _, info in indices]
+        parts.append("")
+        parts.append(us_teaching(bool(alerts), index_pcts))
 
         message = "\n".join(parts)
         if self.send(message):

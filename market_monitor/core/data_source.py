@@ -276,6 +276,44 @@ def parse_nf_futures(line: str):
             "change_pct": pct, "pct": pct}
 
 
+# ============ Yahoo Finance (VIX / 美债10Y) ============
+
+def yahoo_quote(symbol: str, timeout: int = 8) -> Optional[Dict]:
+    """从 Yahoo Finance 拉一个 quote。
+
+    Args:
+        symbol: Yahoo 代码，如 '^VIX', '^TNX', '^TYX'
+
+    Returns:
+        {'name', 'price', 'prev', 'pct'} 或 None
+    """
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d"
+    try:
+        raw = http_get(url, encoding="utf-8", timeout=timeout,
+                       headers={"User-Agent": "Mozilla/5.0", "Referer": "https://finance.yahoo.com"})
+        data = json.loads(raw)
+        result = data.get("chart", {}).get("result") or []
+        if not result:
+            return None
+        meta = result[0].get("meta", {})
+        price = _to_float(meta.get("regularMarketPrice"))
+        prev = _to_float(meta.get("chartPreviousClose"), default=price)
+        if not price:
+            return None
+        pct = (price - prev) / prev * 100 if prev else 0
+        return {
+            "name": symbol,
+            "price": price,
+            "close": price,
+            "prev": prev,
+            "pct": pct,
+            "change_pct": pct,
+        }
+    except Exception as e:
+        print(f"[yahoo_quote] {symbol} error: {e}", file=sys.stderr)
+        return None
+
+
 def parse_dxy(line: str):
     """美元指数 DINIW: 时间,现价,买价,卖价,成交量,今开,最高,最低,昨收,名称,日期"""
     if "=" not in line:

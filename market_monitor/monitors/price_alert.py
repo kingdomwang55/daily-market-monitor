@@ -1,6 +1,7 @@
 """关键点位监控（止损/加仓位）"""
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
+from ..core.teaching import price_alert_teaching
 
 
 class PriceAlertMonitor(BaseMonitor):
@@ -43,6 +44,7 @@ class PriceAlertMonitor(BaseMonitor):
             return True
 
         alerts = []
+        teachings = []  # 触发时附上的教学解读
         for t in targets:
             code = t["code"]
             name = t["name"]
@@ -59,6 +61,7 @@ class PriceAlertMonitor(BaseMonitor):
                 key = f"stop_{code}_{self.today}"
                 if not self.state.has(key) or self.force:
                     alerts.append(f"🔻 {name} 跌破止损位: {price:.2f} < {stop_loss}")
+                    teachings.append(price_alert_teaching(name, price, stop_loss, "down"))
                     self.state.set(key)
 
             # 加仓位（首次突破触发）
@@ -66,6 +69,7 @@ class PriceAlertMonitor(BaseMonitor):
                 key = f"add_{code}_{self.today}"
                 if not self.state.has(key) or self.force:
                     alerts.append(f"🔺 {name} 突破加仓位: {price:.2f} > {add_pos}")
+                    teachings.append(price_alert_teaching(name, price, add_pos, "up"))
                     self.state.set(key)
 
             # 回到区间清 marker
@@ -81,6 +85,9 @@ class PriceAlertMonitor(BaseMonitor):
 
         parts = [f"🎯 关键点位监控 ({self.now_str})"]
         parts.extend(alerts if alerts else ["✅ 所有点位正常"])
+        if teachings:
+            parts.append("")  # 空行分隔
+            parts.append("\n\n".join(teachings))
 
         message = "\n".join(parts)
         if self.send(message):

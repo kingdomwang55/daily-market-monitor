@@ -2,7 +2,7 @@
 import sys
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from .config import get_config
 from .state import State
@@ -35,8 +35,8 @@ class BaseMonitor(ABC):
     def log(self, msg: str):
         print(f"[{self.name}] {msg}", file=sys.stderr)
 
-    def send(self, message: str) -> bool:
-        return send_text(message)
+    def send(self, message: str, meta: Optional[dict] = None) -> bool:
+        return send_text(message, push_type=self.name, meta=meta)
 
     @staticmethod
     def emoji_by_pct(pct: float) -> str:

@@ -6,7 +6,7 @@
     <string>com.market-monitor.hk-market</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>$PROJECT_ROOT/.venv/bin/python</string>
         <string>-m</string>
         <string>market_monitor.cli</string>
         <string>run</string>

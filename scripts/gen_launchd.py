@@ -15,7 +15,7 @@ from market_monitor.core.launchd import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHD_DIR = PROJECT_ROOT / "launchd"
-PYTHON = "/usr/bin/python3"
+PYTHON = "$PROJECT_ROOT/.venv/bin/python"
 
 # python -m market_monitor.cli run <name>
 def make_cli_args(monitor_name: str, extra_args=None) -> tuple:
@@ -134,6 +134,12 @@ def main():
     schedule = make_calendar_schedule(weekday_range(weekdays, [(17, 0)]))
     (LAUNCHD_DIR / "com.market-monitor.evening.plist").write_text(
         build_plist_via_module("com.market-monitor.evening", "evening", schedule)
+    )
+
+    # ===== 8. voice（意见领袖发言日报，每工作日 07:30） =====
+    schedule = make_calendar_schedule(weekday_range(weekdays, [(7, 30)]))
+    (LAUNCHD_DIR / "com.market-monitor.voice.plist").write_text(
+        build_plist_via_module("com.market-monitor.voice", "voice", schedule)
     )
 
     print("✅ plist 已生成到:", LAUNCHD_DIR)

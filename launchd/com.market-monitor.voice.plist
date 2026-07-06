@@ -3,14 +3,14 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.market-monitor.morning</string>
+    <string>com.market-monitor.voice</string>
     <key>ProgramArguments</key>
     <array>
         <string>$PROJECT_ROOT/.venv/bin/python</string>
         <string>-m</string>
         <string>market_monitor.cli</string>
         <string>run</string>
-        <string>morning</string>
+        <string>voice</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$PROJECT_ROOT</string>
@@ -24,31 +24,31 @@
         <dict>
             <key>Weekday</key><integer>1</integer>
             <key>Hour</key><integer>7</integer>
-            <key>Minute</key><integer>0</integer>
+            <key>Minute</key><integer>30</integer>
         </dict>
         <dict>
             <key>Weekday</key><integer>2</integer>
             <key>Hour</key><integer>7</integer>
-            <key>Minute</key><integer>0</integer>
+            <key>Minute</key><integer>30</integer>
         </dict>
         <dict>
             <key>Weekday</key><integer>3</integer>
             <key>Hour</key><integer>7</integer>
-            <key>Minute</key><integer>0</integer>
+            <key>Minute</key><integer>30</integer>
         </dict>
         <dict>
             <key>Weekday</key><integer>4</integer>
             <key>Hour</key><integer>7</integer>
-            <key>Minute</key><integer>0</integer>
+            <key>Minute</key><integer>30</integer>
         </dict>
         <dict>
             <key>Weekday</key><integer>5</integer>
             <key>Hour</key><integer>7</integer>
-            <key>Minute</key><integer>0</integer>
+            <key>Minute</key><integer>30</integer>
         </dict>
     </array>
-    <key>StandardOutPath</key><string>/tmp/com.market-monitor.morning.log</string>
-    <key>StandardErrorPath</key><string>/tmp/com.market-monitor.morning.err</string>
+    <key>StandardOutPath</key><string>/tmp/com.market-monitor.voice.log</string>
+    <key>StandardErrorPath</key><string>/tmp/com.market-monitor.voice.err</string>
     <key>RunAtLoad</key><false/>
 </dict>
 </plist>

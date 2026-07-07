@@ -4,6 +4,14 @@ from ..core import data_source as ds
 from ..core.ai import ai_chat
 from ..core.data_source import _to_float
 from ..core.teaching import get_daily_tip
+from ..core import cross_asset
+from ..core import lookahead
+from ..core import forex as fx
+from ..core import bonds as bd
+from ..core import sentiment as st
+from ..core import sector_flow as sf
+from ..core import geopolitics as geo
+from ..core import scenario as sc
 
 
 class EveningMonitor(BaseMonitor):
@@ -127,6 +135,39 @@ class EveningMonitor(BaseMonitor):
             result["south_trend"] = []
             result["north_deal"] = None
 
+        # P1: 外汇/债券/情绪
+        try:
+            result["forex"] = fx.fetch_forex()
+        except Exception as e:
+            print(f"[evening] 外汇数据获取失败: {e}")
+            result["forex"] = {}
+        try:
+            result["bonds"] = bd.fetch_bonds()
+            result["spreads"] = bd.calc_spreads(result["bonds"])
+        except Exception as e:
+            print(f"[evening] 债券数据获取失败: {e}")
+            result["bonds"] = {}
+            result["spreads"] = {}
+        try:
+            result["sentiment"] = st.fetch_sentiment()
+        except Exception as e:
+            print(f"[evening] 情绪数据获取失败: {e}")
+            result["sentiment"] = {}
+
+        # P2-1: 板块资金流
+        try:
+            result["sector_flow"] = sf.fetch_sector_flow(kind="industry", top_n=50)
+        except Exception as e:
+            print(f"[evening] 板块资金流获取失败: {e}")
+            result["sector_flow"] = []
+
+        # P2-2: 地缘事件
+        try:
+            result["geo_events"] = geo.fetch_geo_events(hours=24)
+        except Exception as e:
+            print(f"[evening] 地缘事件获取失败: {e}")
+            result["geo_events"] = []
+
         return result
 
     def _format_report(self, data):
@@ -220,9 +261,33 @@ class EveningMonitor(BaseMonitor):
                     f"  近{len(trend_nets)}日累计: {total:+.2f} 亿 ({pos}入/{neg}出)"
                 )
 
+        # P1: 外汇/债券/情绪
+        forex_data = data.get("forex") or {}
+        if forex_data:
+            lines.append("\n" + fx.format_forex(forex_data))
+
+        bonds_data = data.get("bonds") or {}
+        spreads = data.get("spreads") or {}
+        if bonds_data:
+            lines.append("\n" + bd.format_bonds(bonds_data, spreads))
+
+        sentiment_data = data.get("sentiment") or {}
+        if sentiment_data:
+            lines.append("\n" + st.format_sentiment(sentiment_data))
+
+        # P2-1: 板块资金流
+        sector_items = data.get("sector_flow") or []
+        if sector_items:
+            lines.append("\n" + sf.format_sector_flow(sector_items, top=5))
+
+        # P2-2: 地缘事件
+        geo_events = data.get("geo_events") or []
+        if geo_events:
+            lines.append("\n" + geo.format_geo_brief(geo_events, top=8))
+
         return "\n".join(lines)
 
-    def _build_ai_prompt(self, data):
+    def _build_ai_prompt(self, data, signals=None):
         """构造 AI 分析 prompt"""
         from datetime import datetime
         facts = []
@@ -294,6 +359,35 @@ class EveningMonitor(BaseMonitor):
         facts_text = "\n".join(facts)
         today = datetime.now().strftime("%Y-%m-%d %A")
 
+        # 跨资产传导信号（规则引擎输出，给 AI 当作国际市场联动分析的输入）
+        signals_text = cross_asset.signals_summary_for_ai(signals or [])
+
+        # P1: 外汇/债券/情绪
+        p1_forex = fx.forex_summary_for_ai(data.get("forex") or {})
+        p1_bonds = bd.bonds_summary_for_ai(data.get("bonds") or {}, data.get("spreads") or {})
+        p1_sentiment = st.sentiment_summary_for_ai(data.get("sentiment") or {})
+
+        # P2-1: 板块资金流
+        sector_items = data.get("sector_flow") or []
+        p2_sector = sf.sector_flow_summary_for_ai(sector_items, top=8)
+        sector_signals = sf.analyze_sector_rotation(sector_items)
+        p2_sector_signals = sf.sector_signals_summary_for_ai(sector_signals)
+
+        # P2-2: 地缘事件
+        geo_events = data.get("geo_events") or []
+        p2_geo = geo.geo_summary_for_ai(geo_events, top=8)
+
+        # P2-3: 情景推演（从日历中匹配高影响事件）
+        import importlib.util
+        spec = importlib.util.find_spec("market_monitor.core.econ_calendar")
+        if spec:
+            from market_monitor.core.econ_calendar import today_events, upcoming
+            cal_events = today_events() + upcoming(3)
+            high_impact_evs = [e for e in cal_events if e.get("impact_score", 0) >= 4]
+            p2_scenario = sc.format_scenarios_for_calendar(high_impact_evs)
+        else:
+            p2_scenario = ""
+
         # 盘前防呆
         all_zero = all(
             q.get("pct", 0) == 0 and q.get("stage") != "live"
@@ -329,6 +423,22 @@ class EveningMonitor(BaseMonitor):
 
 市场数据：
 {facts_text}
+
+{p1_forex}
+
+{p1_bonds}
+
+{p1_sentiment}
+
+{p2_sector}
+
+{p2_sector_signals}
+
+{p2_geo}
+
+{p2_scenario}
+
+{signals_text}
 """
 
     def run(self) -> bool:
@@ -341,8 +451,57 @@ class EveningMonitor(BaseMonitor):
         data = self._gather_all()
         report = self._format_report(data)
 
+        # 跨资产传导信号（基于国际市场数据）
+        overseas_for_ca = dict(data.get("overseas") or {})
+        # 把南下资金也接进去（以 _south_latest 为 key，匹配 cross_asset 的约定）
+        if data.get("south_latest"):
+            overseas_for_ca["_south_latest"] = data["south_latest"]
+        signals = cross_asset.analyze(overseas_for_ca)
+        if signals:
+            report += f"\n\n━━━━━━━━━━━━━━━\n🔗 跨资产传导信号\n\n{cross_asset.format_signals(signals)}"
+
+        # P1: 外汇/债券/情绪 信号
+        forex_data = data.get("forex") or {}
+        fx_signals = fx.analyze_forex_signals(forex_data)
+        if fx_signals:
+            fx_lines = ["\n━━━━━━━━━━━━━━━\n💱 外汇异动信号\n"]
+            for s in fx_signals:
+                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s["severity"], "•")
+                fx_lines.append(f"{icon} 【{s['name']}】 {s['narrative']}")
+            report += "\n".join(fx_lines)
+
+        bonds_data = data.get("bonds") or {}
+        spreads = data.get("spreads") or {}
+        bond_signals = bd.analyze_yield_curve(bonds_data, spreads)
+        if bond_signals:
+            bd_lines = ["\n━━━━━━━━━━━━━━━\n📈 债券曲线信号\n"]
+            for s in bond_signals:
+                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s["severity"], "•")
+                bd_lines.append(f"{icon} 【{s['name']}】\n  {s['narrative']}")
+            report += "\n".join(bd_lines)
+
+        sentiment_data = data.get("sentiment") or {}
+        sent_signals = st.analyze_sentiment_signals(sentiment_data)
+        if sent_signals:
+            sent_lines = ["\n━━━━━━━━━━━━━━━\n🧠 情绪极端信号\n"]
+            for s in sent_signals:
+                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s["severity"], "•")
+                sent_lines.append(f"{icon} 【{s['name']}】\n  {s['narrative']}")
+            report += "\n".join(sent_lines)
+
+        # P2-1: 板块资金流信号
+        sector_items = data.get("sector_flow") or []
+        sector_signals = sf.analyze_sector_rotation(sector_items)
+        if sector_signals:
+            report += "\n\n" + sf.format_sector_signals(sector_signals)
+
+        # P2-2: 地缘事件
+        geo_events = data.get("geo_events") or []
+        if geo_events:
+            report += "\n\n" + geo.format_geo_brief(geo_events, top=8)
+
         # AI 分析
-        prompt = self._build_ai_prompt(data)
+        prompt = self._build_ai_prompt(data, signals)
         analysis = ai_chat(prompt, temperature=0.7, max_tokens=1400)
 
         if analysis:
@@ -352,6 +511,14 @@ class EveningMonitor(BaseMonitor):
 
         # 每日教学锦囊(轮换)
         report += f"\n\n━━━━━━━━━━━━━━━\n{get_daily_tip()}"
+
+        # 前瞻性观察清单（明日关注）
+        try:
+            watchlist = lookahead.build_tomorrow_watchlist(data=data)
+            if watchlist:
+                report += f"\n\n{watchlist}"
+        except Exception as e:
+            print(f"[evening] 前瞻性清单生成失败: {e}")
 
         report += "\n\n(数据:新浪财经/东财 · 分析:AI)"
 

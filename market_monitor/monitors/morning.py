@@ -4,6 +4,13 @@ from ..core import data_source as ds
 from ..core.ai import ai_chat
 from ..core.data_source import _to_float
 from ..core.teaching import get_daily_tip
+from ..core import cross_asset
+from ..core import lookahead
+from ..core import forex as fx
+from ..core import bonds as bd
+from ..core import sentiment as st
+from ..core import geopolitics as geo
+from ..core import scenario as sc
 
 
 class MorningMonitor(BaseMonitor):
@@ -88,6 +95,31 @@ class MorningMonitor(BaseMonitor):
             if q:
                 data[name] = q
 
+        # P1: 外汇扩展
+        try:
+            data["_forex"] = fx.fetch_forex()
+        except Exception as e:
+            print(f"[morning] 外汇数据获取失败: {e}")
+
+        # P1: 债券曲线
+        try:
+            data["_bonds"] = bd.fetch_bonds()
+            data["_spreads"] = bd.calc_spreads(data["_bonds"])
+        except Exception as e:
+            print(f"[morning] 债券数据获取失败: {e}")
+
+        # P1: 情绪指标
+        try:
+            data["_sentiment"] = st.fetch_sentiment()
+        except Exception as e:
+            print(f"[morning] 情绪数据获取失败: {e}")
+
+        # P2-2: 地缘事件
+        try:
+            data["_geo_events"] = geo.fetch_geo_events(hours=24)
+        except Exception as e:
+            print(f"[morning] 地缘事件获取失败: {e}")
+
         # 泪深港通资金流（昨日收盘确定值 + 近5日趋势）
         try:
             data["_south_latest"] = ds.fetch_south_flow_latest()
@@ -153,6 +185,31 @@ class MorningMonitor(BaseMonitor):
         parts.append("【汇市】")
         parts.append(_row("美元指数", "美元指数"))
 
+        # 外汇扩展（P1-1）
+        forex_data = data.get("_forex") or {}
+        if forex_data:
+            parts.append("")
+            parts.append(fx.format_forex(forex_data))
+
+        # 债券曲线（P1-2）
+        bonds_data = data.get("_bonds") or {}
+        spreads = data.get("_spreads") or {}
+        if bonds_data:
+            parts.append("")
+            parts.append(bd.format_bonds(bonds_data, spreads))
+
+        # 情绪指标（P1-3）
+        sentiment_data = data.get("_sentiment") or {}
+        if sentiment_data:
+            parts.append("")
+            parts.append(st.format_sentiment(sentiment_data))
+
+        # P2-2: 地缘事件
+        geo_events = data.get("_geo_events") or []
+        if geo_events:
+            parts.append("")
+            parts.append(geo.format_geo_brief(geo_events, top=6))
+
         # 泪深港通资金流
         south = data.get("_south_latest") or {}
         north = data.get("_north_deal") or {}
@@ -178,7 +235,7 @@ class MorningMonitor(BaseMonitor):
 
         return "\n".join(parts)
 
-    def _build_ai_prompt(self, data):
+    def _build_ai_prompt(self, data, signals=None):
         """构造 AI 分析 prompt"""
         from datetime import datetime
         facts = []
@@ -239,25 +296,66 @@ class MorningMonitor(BaseMonitor):
         facts_text = "\n".join(facts)
         today = datetime.now().strftime("%Y-%m-%d %A")
 
+        # 跨资产传导信号（规则引擎输出）
+        signals_text = cross_asset.signals_summary_for_ai(signals or [])
+        # 财经日历（今日 + 未来3天）
+        cal_text = lookahead.build_morning_calendar_brief() or "财经日历：本周无高影响事件"
+
+        # P1: 外汇/债券/情绪 紧凑版
+        forex_text = fx.forex_summary_for_ai(data.get("_forex") or {})
+        bonds_text = bd.bonds_summary_for_ai(data.get("_bonds") or {}, data.get("_spreads") or {})
+        sentiment_text = st.sentiment_summary_for_ai(data.get("_sentiment") or {})
+
+        # P2-2: 地缘事件
+        geo_events = data.get("_geo_events") or []
+        geo_text = geo.geo_summary_for_ai(geo_events, top=6)
+
+        # P2-3: 情景推演（从日历中匹配高影响事件）
+        import importlib.util  # noqa: F811
+        spec = importlib.util.find_spec("market_monitor.core.econ_calendar")
+        if spec:
+            from market_monitor.core.econ_calendar import today_events, upcoming
+            cal_events = today_events() + upcoming(3)
+            high_impact_evs = [e for e in cal_events if e.get("impact_score", 0) >= 4]
+            scenario_text = sc.format_scenarios_for_calendar(high_impact_evs)
+        else:
+            scenario_text = ""
+
         return f"""你是一位资深宏观策略师，正在为一位既懂交易又忙碌的中国投资者写晨间简报。请基于下方最新市场数据，生成一段简洁、专业、有观点的分析。
 
 要求：
-1. 分 4 段，依次为：
-   【隔夜海外市场】、【A股/港股开盘预期与联动判断】、【大宗商品/汇率关注点】、【当日操作建议】
-2. 【A股/港股开盘预期与联动判断】这一段重点：
+1. 分 5 段，依次为：
+   【隔夜海外市场】、【跨资产传导叙事】、【A股/港股开盘预期与联动判断】、【今日关注（日历）】、【当日操作建议】
+2. 【跨资产传导叙事】只能使用下方“规则引擎”检测到的信号，把它们串成一段因果叙事，不要就单一数据孤立解读；若无信号则写“今日未触发显著传导链，属于细碎行情”
+3. 【A股/港股开盘预期与联动判断】这一段重点：
    - 基于隔夜美股/DXY/VIX/美债10Y，预判今日A股开盘/行业方向
    - 提前标注哪些是“教科书式联动”（如 VIX急升 → A股高开低走），哪些可能出现“反直觉”（如 美股跌但 A 股可能拉拓，因为国内新政策等）
    - 晚上盘后报告会回验这些判断
    - 如数据中有泪深港通资金流，必须把昨日南下资金方向 + 近5日累计纳入港股开盘预判：
      • 南下流入 = 内资看多港股，高股息/科技龙头可能旹盘受益
      • 南下流出 = 内资撤退，港股短期承压，也会拖累 A 股同板块
-3. 有明确观点（不要“可能/或许”堆砌），基于数据讲逻辑
-4. 避免陈词滥调（“震荡整理”“谨慎观望”这类词请少用）
-5. 中文，总字数控制在 380-480 字
-6. 用【】标题分段，不要用 markdown 的 # 或 * 符号
+4. 【今日关注（日历）】把下方财经日历信息自然融入：重点说明影响时间点 + 预期值 vs 前值 + 若超预期可能的传导链
+5. 有明确观点（不要“可能/或许”堆砌），基于数据讲逻辑
+6. 避免陈词滥调（“震荡整理”“谨慎观望”这类词请少用）
+7. 中文，总字数控制在 500-650 字
+8. 用【】标题分段，不要用 markdown 的 # 或 * 符号
 
 市场数据：
 {facts_text}
+
+{forex_text}
+
+{bonds_text}
+
+{sentiment_text}
+
+{geo_text}
+
+{signals_text}
+
+{cal_text}
+
+{scenario_text}
 
 今天日期：{today}
 """
@@ -276,8 +374,49 @@ class MorningMonitor(BaseMonitor):
 
         report = self._build_report(data)
 
+        # 跨资产联动分析
+        signals = cross_asset.analyze(data)
+        if signals:
+            report += f"\n\n━━━━━━━━━━━━━━━\n🔗 跨资产传导信号\n\n{cross_asset.format_signals(signals)}"
+
+        # P1: 外汇异动信号
+        forex_data = data.get("_forex") or {}
+        fx_signals = fx.analyze_forex_signals(forex_data)
+        if fx_signals:
+            fx_lines = ["\n━━━━━━━━━━━━━━━\n💱 外汇异动信号\n"]
+            for s in fx_signals:
+                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s["severity"], "•")
+                fx_lines.append(f"{icon} 【{s['name']}】 {s['narrative']}")
+            report += "\n".join(fx_lines)
+
+        # P1: 债券曲线信号
+        bonds_data = data.get("_bonds") or {}
+        spreads = data.get("_spreads") or {}
+        bond_signals = bd.analyze_yield_curve(bonds_data, spreads)
+        if bond_signals:
+            bd_lines = ["\n━━━━━━━━━━━━━━━\n📈 债券曲线信号\n"]
+            for s in bond_signals:
+                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s["severity"], "•")
+                bd_lines.append(f"{icon} 【{s['name']}】\n  {s['narrative']}")
+            report += "\n".join(bd_lines)
+
+        # P1: 情绪极端信号
+        sentiment_data = data.get("_sentiment") or {}
+        sent_signals = st.analyze_sentiment_signals(sentiment_data)
+        if sent_signals:
+            sent_lines = ["\n━━━━━━━━━━━━━━━\n🧠 情绪极端信号\n"]
+            for s in sent_signals:
+                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(s["severity"], "•")
+                sent_lines.append(f"{icon} 【{s['name']}】\n  {s['narrative']}")
+            report += "\n".join(sent_lines)
+
+        # 财经日历
+        cal_brief = lookahead.build_morning_calendar_brief()
+        if cal_brief:
+            report += f"\n\n{cal_brief}"
+
         # AI 分析
-        prompt = self._build_ai_prompt(data)
+        prompt = self._build_ai_prompt(data, signals)
         analysis = ai_chat(prompt, temperature=0.7, max_tokens=800)
 
         if analysis:

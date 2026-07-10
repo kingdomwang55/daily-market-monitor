@@ -33,3 +33,13 @@ state/
 
 # 状态文件（运行时生成）
 /tmp/*_state.json
+
+# 数据库（SQLite）
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/backups/
+
+# 持仓文件（含月薪、成本价等敏感信息）
+positions.json
+

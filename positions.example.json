@@ -1,0 +1,20 @@
+{
+  "_comment": "复制此文件为 positions.json 并填入你自己的数据。positions.json 已被 gitignore，不会入库。",
+  "monthly_salary": 0,
+  "max_drawdown_months": 1,
+  "positions": [
+    {
+      "id": "example_position",
+      "symbol": "sh510300",
+      "name": "沪深300ETF（示例）",
+      "entry_price": 0.0,
+      "current_shares": 0,
+      "stop_loss": 0.0,
+      "add_position": 0.0,
+      "entry_date": "2026-01-01",
+      "note": "在此填入备注"
+    }
+  ],
+  "cash_ratio": 0.0,
+  "total_capital": 0
+}

@@ -471,6 +471,258 @@ def cmd_db_stats(args):
                 print(f"  {row['signal_type']:<24} {row['count']:>8}")
 
 
+# ═══════════════════════════════════════════════════════
+# Trade Journal Commands（W1 交易日志）
+# ═══════════════════════════════════════════════════════
+
+def _fmt_pnl(pnl):
+    if pnl is None:
+        return "  -  "
+    color = "🟢" if pnl > 0 else ("🔴" if pnl < 0 else "⚪")
+    return f"{color} {pnl:+.2f}"
+
+
+def _fmt_pct(p):
+    if p is None:
+        return "  -  "
+    return f"{p*100:+.2f}%"
+
+
+def _local_time(dt):
+    from datetime import timezone, timedelta
+    if dt is None:
+        return "-"
+    return (
+        dt.replace(tzinfo=timezone.utc)
+        .astimezone(timezone(timedelta(hours=8)))
+        .strftime("%Y-%m-%d %H:%M")
+    )
+
+
+def cmd_trade_add(args):
+    """添加纸面交易（开仓）"""
+    from .data import get_session
+    from .data.repositories import PaperTradeRepository
+
+    with get_session() as s:
+        repo = PaperTradeRepository(s)
+        t = repo.open_trade(
+            symbol=args.symbol,
+            entry_price=args.price,
+            qty=args.qty,
+            name=args.name,
+            action=args.action,
+            strategy=args.strategy,
+            tag=args.tag,
+            entry_reason=args.reason,
+            stop_loss=args.stop_loss,
+            take_profit=args.take_profit,
+            signal_event_id=args.signal_id,
+            notes=args.notes,
+        )
+    print(f"✅ 已开仓 #{t.id}")
+    print(f"   {t.symbol} {'做多' if t.action == 'long' else '做空'} @ {t.entry_price} × {t.qty}")
+    if t.strategy:
+        print(f"   策略: {t.strategy}")
+    if t.stop_loss or t.take_profit:
+        print(f"   风控: 止损={t.stop_loss or '-'} 止盈={t.take_profit or '-'}")
+    if t.entry_reason:
+        print(f"   理由: {t.entry_reason}")
+
+
+def cmd_trade_close(args):
+    """平仓一笔交易"""
+    from .data import get_session
+    from .data.repositories import PaperTradeRepository
+
+    with get_session() as s:
+        repo = PaperTradeRepository(s)
+        closed = repo.close_trade(
+            args.trade_id,
+            close_price=args.price,
+            close_reason=args.reason,
+        )
+        if closed is None:
+            print(f"❌ 交易 #{args.trade_id} 不存在或已平仓")
+            return
+
+        print(f"✅ 已平仓 #{closed.id}")
+        print(f"   {closed.symbol} @ {closed.entry_price} → {closed.close_price}")
+        print(f"   盈亏: {_fmt_pnl(closed.pnl)} ({_fmt_pct(closed.pnl_pct)}) · {closed.hold_days} 天")
+        if closed.close_reason:
+            print(f"   理由: {closed.close_reason}")
+
+
+def cmd_trade_list(args):
+    """列出交易（默认持仓中）"""
+    from .data import get_session
+    from .data.repositories import PaperTradeRepository
+
+    with get_session() as s:
+        repo = PaperTradeRepository(s)
+
+        if args.all:
+            open_trades = repo.list_open(strategy=args.strategy)
+            closed_trades = repo.list_closed(strategy=args.strategy, days=args.days, limit=args.limit)
+        elif args.closed:
+            open_trades = []
+            closed_trades = repo.list_closed(strategy=args.strategy, days=args.days, limit=args.limit)
+        else:
+            open_trades = repo.list_open(strategy=args.strategy)
+            closed_trades = []
+
+        if open_trades:
+            print(f"📂 持仓中 ({len(open_trades)} 笔):\n")
+            print(f"  {'ID':>4} {'Symbol':<12} {'Strategy':<10} {'Entry':>8} {'Qty':>8}  {'Since':<12} {'Reason'}")
+            print("  " + "-" * 78)
+            for t in open_trades:
+                since = _local_time(t.entry_at)[:10]
+                reason = (t.entry_reason or "")[:24]
+                print(f"  #{t.id:>3} {t.symbol:<12} {(t.strategy or '-'):<10} "
+                      f"{t.entry_price:>8.3f} {t.qty:>8.0f}  {since:<12} {reason}")
+
+        if closed_trades:
+            print(f"\n🔒 已平仓 ({len(closed_trades)} 笔):\n")
+            print(f"  {'ID':>4} {'Symbol':<12} {'Entry':>8} {'Close':>8} {'PnL':>10}  {'Pct':>8}  {'Days':>4}")
+            print("  " + "-" * 68)
+            for t in closed_trades:
+                print(f"  #{t.id:>3} {t.symbol:<12} {t.entry_price:>8.3f} "
+                      f"{t.close_price or 0:>8.3f} {_fmt_pnl(t.pnl):>10}  "
+                      f"{_fmt_pct(t.pnl_pct):>8}  {t.hold_days or 0:>4}")
+
+        if not open_trades and not closed_trades:
+            print("💭 没有符合条件的交易")
+
+
+def cmd_trade_pnl(args):
+    """盈亏统计"""
+    from .data import get_session
+    from .data.repositories import PaperTradeRepository
+
+    with get_session() as s:
+        repo = PaperTradeRepository(s)
+        summary = repo.pnl_summary(days=args.days)
+
+        print(f"📊 纸面交易盈亏总览" + (f" (近 {args.days} 天)" if args.days else ""))
+        print()
+        print(f"  已平仓: {summary['closed_count']} 笔")
+        print(f"  持仓中: {summary['open_count']} 笔")
+
+        if summary['closed_count']:
+            wr = summary['win_rate']
+            print(f"  胜率  : {(wr * 100):.1f}% ({summary['win_count']}胜 / {summary['loss_count']}亏)")
+            print(f"  总盈亏: {_fmt_pnl(summary['total_realized_pnl'])}")
+            if summary['avg_win'] is not None:
+                print(f"  均盈  : {_fmt_pnl(summary['avg_win'])}")
+            if summary['avg_loss'] is not None:
+                print(f"  均亏  : {_fmt_pnl(summary['avg_loss'])}")
+            if summary['profit_factor'] is not None:
+                print(f"  盈亏比: {summary['profit_factor']:.2f}")
+
+        # 按策略分组
+        strat_stats = repo.by_strategy_stats(days=args.days)
+        if strat_stats:
+            print(f"\n🎯 按策略拆分:\n")
+            print(f"  {'Strategy':<12} {'Count':>6} {'TotalPnL':>12} {'AvgPct':>10}")
+            print("  " + "-" * 42)
+            for r in strat_stats:
+                pct = _fmt_pct(r['avg_pct']) if r['avg_pct'] is not None else "  -  "
+                print(f"  {r['strategy']:<12} {r['count']:>6} "
+                      f"{_fmt_pnl(r['total_pnl']):>12} {pct:>10}")
+
+
+def cmd_trade_review(args):
+    """生成/查看周复盘"""
+    from datetime import datetime
+    from .data import get_session
+    from .data.repositories import TradeReviewRepository, PaperTradeRepository
+
+    with get_session() as s:
+        rrepo = TradeReviewRepository(s)
+        prepo = PaperTradeRepository(s)
+
+        period_type = args.period
+        if args.key:
+            period_key = args.key
+        else:
+            period_key = (
+                TradeReviewRepository.week_key(datetime.utcnow())
+                if period_type == "week"
+                else TradeReviewRepository.month_key(datetime.utcnow())
+            )
+
+        r = rrepo.generate(period_type=period_type, period_key=period_key)
+        if r is None or r.trade_count == 0:
+            print(f"💭 {period_type} {period_key} 无平仓交易")
+            return
+
+        print(f"📑 复盘: {period_type} {period_key}")
+        print()
+        print(f"  交易笔数: {r.trade_count}")
+        print(f"  胜率    : {(r.win_rate * 100):.1f}% ({r.win_count}胜 / {r.loss_count}亏)")
+        print(f"  总盈亏  : {_fmt_pnl(r.total_pnl)}")
+        if r.avg_win:
+            print(f"  均盈    : {_fmt_pnl(r.avg_win)}")
+        if r.avg_loss:
+            print(f"  均亏    : {_fmt_pnl(r.avg_loss)}")
+
+        if r.best_trade_id:
+            best = prepo.by_id(r.best_trade_id)
+            if best:
+                print(f"\n  🏆 最佳: #{best.id} {best.symbol} "
+                      f"{_fmt_pnl(best.pnl)} ({_fmt_pct(best.pnl_pct)})")
+
+        if r.worst_trade_id:
+            worst = prepo.by_id(r.worst_trade_id)
+            if worst:
+                print(f"  💩 最差: #{worst.id} {worst.symbol} "
+                      f"{_fmt_pnl(worst.pnl)} ({_fmt_pct(worst.pnl_pct)})")
+
+
+def cmd_trade_show(args):
+    """查看单笔交易详情"""
+    from .data import get_session
+    from .data.repositories import PaperTradeRepository
+
+    with get_session() as s:
+        repo = PaperTradeRepository(s)
+        t = repo.by_id(args.trade_id)
+        if t is None:
+            print(f"❌ 交易 #{args.trade_id} 不存在")
+            return
+
+        print(f"📋 交易 #{t.id} [{t.status}]\n")
+        print(f"  Symbol   : {t.symbol}  ({t.name or '-'})")
+        print(f"  Action   : {'做多' if t.action == 'long' else '做空'}")
+        print(f"  Strategy : {t.strategy or '-'}")
+        print(f"  Tag      : {t.tag or '-'}")
+        print()
+        print(f"  开仓时间 : {_local_time(t.entry_at)}")
+        print(f"  开仓价   : {t.entry_price}")
+        print(f"  数量     : {t.qty}")
+        if t.entry_reason:
+            print(f"  开仓理由 : {t.entry_reason}")
+        if t.stop_loss:
+            print(f"  止损价   : {t.stop_loss}")
+        if t.take_profit:
+            print(f"  止盈价   : {t.take_profit}")
+
+        if t.status == "closed":
+            print()
+            print(f"  平仓时间 : {_local_time(t.close_at)}")
+            print(f"  平仓价   : {t.close_price}")
+            print(f"  持仓天数 : {t.hold_days}")
+            print(f"  盈亏     : {_fmt_pnl(t.pnl)} ({_fmt_pct(t.pnl_pct)})")
+            if t.close_reason:
+                print(f"  平仓理由 : {t.close_reason}")
+
+        if t.notes:
+            print(f"\n  备注: {t.notes}")
+
+        if t.signal_event_id:
+            print(f"\n  关联信号: signal_event #{t.signal_event_id}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -593,6 +845,52 @@ def main():
     p_db_stats = db_sub.add_parser("stats", help="推送统计")
     p_db_stats.add_argument("--days", type=int, default=30, help="最近多少天")
     p_db_stats.set_defaults(func=cmd_db_stats)
+
+    # trade（W1 交易日志）
+    p_trade = sub.add_parser("trade", help="纸面交易 & 复盘")
+    trade_sub = p_trade.add_subparsers(dest="action", required=True)
+
+    p_tadd = trade_sub.add_parser("add", help="开仓（新增交易）")
+    p_tadd.add_argument("symbol", help="标的代码，例 sh510300 / sz159915")
+    p_tadd.add_argument("price", type=float, help="开仓价")
+    p_tadd.add_argument("qty", type=float, help="数量（股或份）")
+    p_tadd.add_argument("--name", help="人可读名称")
+    p_tadd.add_argument("--action", default="long", choices=["long", "short"], help="方向（默认 long）")
+    p_tadd.add_argument("--strategy", help="策略名：ah_arb / etf_disc / tobacco / manual")
+    p_tadd.add_argument("--tag", help="自由标签")
+    p_tadd.add_argument("--reason", help="开仓理由")
+    p_tadd.add_argument("--stop-loss", type=float, dest="stop_loss", help="止损价")
+    p_tadd.add_argument("--take-profit", type=float, dest="take_profit", help="止盈价")
+    p_tadd.add_argument("--signal-id", type=int, dest="signal_id", help="关联 signal_event id")
+    p_tadd.add_argument("--notes", help="备注")
+    p_tadd.set_defaults(func=cmd_trade_add)
+
+    p_tclose = trade_sub.add_parser("close", help="平仓")
+    p_tclose.add_argument("trade_id", type=int, help="交易 ID")
+    p_tclose.add_argument("price", type=float, help="平仓价")
+    p_tclose.add_argument("--reason", help="平仓理由")
+    p_tclose.set_defaults(func=cmd_trade_close)
+
+    p_tlist = trade_sub.add_parser("list", help="列出交易")
+    p_tlist.add_argument("--all", action="store_true", help="同时显示持仓中和已平仓")
+    p_tlist.add_argument("--closed", action="store_true", help="只看已平仓")
+    p_tlist.add_argument("--strategy", help="按策略过滤")
+    p_tlist.add_argument("--days", type=int, help="已平仓限定近 N 天")
+    p_tlist.add_argument("--limit", type=int, default=50, help="每类最多多少条（默认 50）")
+    p_tlist.set_defaults(func=cmd_trade_list)
+
+    p_tshow = trade_sub.add_parser("show", help="查看单笔交易详情")
+    p_tshow.add_argument("trade_id", type=int, help="交易 ID")
+    p_tshow.set_defaults(func=cmd_trade_show)
+
+    p_tpnl = trade_sub.add_parser("pnl", help="盈亏统计")
+    p_tpnl.add_argument("--days", type=int, help="最近多少天")
+    p_tpnl.set_defaults(func=cmd_trade_pnl)
+
+    p_trev = trade_sub.add_parser("review", help="生成周/月复盘")
+    p_trev.add_argument("--period", default="week", choices=["week", "month"], help="周报或月报")
+    p_trev.add_argument("--key", help="时间 key，例 2026-W28 或 2026-07（默认本周/本月）")
+    p_trev.set_defaults(func=cmd_trade_review)
 
     args = parser.parse_args()
     args.func(args)

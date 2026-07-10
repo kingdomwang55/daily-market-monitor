@@ -258,3 +258,117 @@ class SymbolOhlcDaily(Base):
     volume:     Mapped[Optional[float]] = mapped_column(Float)
     amount:     Mapped[Optional[float]] = mapped_column(Float)
     pct:        Mapped[Optional[float]] = mapped_column(Float)
+
+
+# ═══════════════════════════════════════════════════════
+# Trade Journal Layer（交易日志系统，W1）
+# ═══════════════════════════════════════════════════════
+
+class PaperTrade(Base):
+    """纸面交易记录（paper trading）
+
+    一笔记录 = 一个完整持仓（开仓 + 可选平仓）。
+    - status='open'  : 未平仓，close_at / close_price / pnl 皆为 NULL
+    - status='closed': 已平仓，自动计算 pnl / pnl_pct
+    - action='long'  : 做多（买）。内地不支持 short，暂时只支持 long
+
+    与 signal_event 关联：若交易决策来自某个推送信号，可回填 signal_event_id，
+    后续能统计"那个信号历史赚亏盖率"。
+    """
+    __tablename__ = "paper_trade"
+
+    id:              Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol:          Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name:            Mapped[Optional[str]]   = mapped_column(String(128))
+    action:          Mapped[str] = mapped_column(String(8), nullable=False, default="long")  # long/short
+    strategy:        Mapped[Optional[str]]   = mapped_column(String(64))    # ah_arb/etf_disc/tobacco/manual
+    tag:             Mapped[Optional[str]]   = mapped_column(String(64))
+
+    # 开仓
+    entry_at:        Mapped[datetime]  = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    entry_price:     Mapped[float]     = mapped_column(Float, nullable=False)
+    qty:             Mapped[float]     = mapped_column(Float, nullable=False)
+    entry_reason:    Mapped[Optional[str]] = mapped_column(Text)
+
+    # 平仓（可空）
+    close_at:        Mapped[Optional[datetime]] = mapped_column(DateTime)
+    close_price:     Mapped[Optional[float]]    = mapped_column(Float)
+    close_reason:    Mapped[Optional[str]]      = mapped_column(Text)
+
+    # 风控（可选）
+    stop_loss:       Mapped[Optional[float]] = mapped_column(Float)
+    take_profit:     Mapped[Optional[float]] = mapped_column(Float)
+
+    # 盈亏（平仓后自动计算）
+    pnl:             Mapped[Optional[float]] = mapped_column(Float)
+    pnl_pct:         Mapped[Optional[float]] = mapped_column(Float)
+    hold_days:       Mapped[Optional[int]]   = mapped_column(Integer)
+
+    status:          Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
+
+    # 关联到推送信号（可选）
+    signal_event_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("signal_event.id"), nullable=True
+    )
+
+    notes:           Mapped[Optional[str]]  = mapped_column(Text)
+
+    __table_args__ = (
+        Index("idx_paper_trade_status", "status"),
+        Index("idx_paper_trade_strategy", "strategy"),
+        Index("idx_paper_trade_entry_at", "entry_at"),
+    )
+
+
+class TradeSignalLink(Base):
+    """推送信号 ↔ 交易决策关联
+
+    一个 signal_event 可能触发了多笔交易，也可能未触发任何交易（看了但没动手）。
+    - decision = 'act'  : 已根据信号下单（至少一笔 paper_trade）
+    - decision = 'skip' : 看到信号但主动不动（后续可回看是否错过机会）
+    - decision = 'noise': 当时判定为噪声
+
+    用途：统计"推送信号"→"实际决策"→"盈亏"的完整链路。
+    """
+    __tablename__ = "trade_signal_link"
+
+    id:              Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_event_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("signal_event.id"), nullable=False, index=True
+    )
+    paper_trade_id:  Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("paper_trade.id")
+    )
+    decision:        Mapped[str] = mapped_column(String(16), nullable=False)  # act/skip/noise
+    reason:          Mapped[Optional[str]] = mapped_column(Text)
+    created_at:      Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_signal_link_decision", "decision"),
+    )
+
+
+class TradeReview(Base):
+    """周/月复盘归因
+
+    period_type: 'week' 或 'month'
+    period_key : 'YYYY-Www'（week）或 'YYYY-MM'（month）
+    主键：(period_type, period_key)
+    """
+    __tablename__ = "trade_review"
+
+    period_type:      Mapped[str]   = mapped_column(String(8),  primary_key=True)
+    period_key:       Mapped[str]   = mapped_column(String(16), primary_key=True)
+
+    trade_count:      Mapped[int]   = mapped_column(Integer, default=0, nullable=False)
+    win_count:        Mapped[int]   = mapped_column(Integer, default=0, nullable=False)
+    loss_count:       Mapped[int]   = mapped_column(Integer, default=0, nullable=False)
+    win_rate:         Mapped[Optional[float]] = mapped_column(Float)
+    total_pnl:        Mapped[Optional[float]] = mapped_column(Float)
+    avg_win:          Mapped[Optional[float]] = mapped_column(Float)
+    avg_loss:         Mapped[Optional[float]] = mapped_column(Float)
+    max_drawdown:     Mapped[Optional[float]] = mapped_column(Float)
+    best_trade_id:    Mapped[Optional[int]]   = mapped_column(Integer, ForeignKey("paper_trade.id"))
+    worst_trade_id:   Mapped[Optional[int]]   = mapped_column(Integer, ForeignKey("paper_trade.id"))
+    notes:            Mapped[Optional[str]]   = mapped_column(Text)
+    generated_at:     Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

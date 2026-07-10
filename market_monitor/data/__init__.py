@@ -21,6 +21,9 @@ from .models import (
     DailySummary,
     SignalOutcome,
     SymbolOhlcDaily,
+    PaperTrade,
+    TradeSignalLink,
+    TradeReview,
 )
 
 __all__ = [
@@ -37,4 +40,7 @@ __all__ = [
     "DailySummary",
     "SignalOutcome",
     "SymbolOhlcDaily",
+    "PaperTrade",
+    "TradeSignalLink",
+    "TradeReview",
 ]

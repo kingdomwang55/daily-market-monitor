@@ -116,8 +116,40 @@ class ShockMonitor(BaseMonitor):
             parts.append(shock_teaching(max_level, bool(sector_alerts)))
 
         message = "\n".join(parts)
-        if self.send(message):
-            self.log(f"✅ 已发送 {self.now_str}")
+
+        # ─── 落库 meta ───
+        idx_avg = (
+            sum(info["pct"] for _, info in indices) / len(indices)
+            if indices else 0.0
+        )
+        # 分类信号类型
+        if index_alerts and sector_alerts:
+            signal_type = f"shock_mixed_L{max_level}"
+        elif index_alerts:
+            direction = "up" if idx_avg > 0 else "down"
+            signal_type = f"shock_index_{direction}_L{max_level}"
+        elif sector_alerts:
+            signal_type = "shock_sector_only"
+        else:
+            signal_type = "shock_neutral"
+
+        meta = {
+            "scenario": signal_type,
+            "max_level": max_level,
+            "signal_type": signal_type,
+            "a_avg_pct": round(idx_avg, 3),
+            "index_alerts_count": len(index_alerts),
+            "sector_alerts_count": len(sector_alerts),
+            "metrics": {
+                "indices": [
+                    {"name": n, "pct": info["pct"], "close": info["close"]}
+                    for n, info in indices
+                ],
+                "sector_alerts": sector_alerts,
+            },
+        }
+        if self.send(message, meta=meta):
+            self.log(f"✅ 已发送 {self.now_str} type={signal_type}")
             self.state.save()
             return True
         self.log("❌ 发送失败")

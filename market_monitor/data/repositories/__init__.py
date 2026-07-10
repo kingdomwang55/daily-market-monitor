@@ -8,6 +8,11 @@ from .snapshot_repo import MarketSnapshotRepository
 from .signal_repo import SignalEventRepository
 from .dedup_repo import AlertDedupRepository
 from .stats_repo import StatsRepository
+from .trade_repo import (
+    PaperTradeRepository,
+    TradeSignalLinkRepository,
+    TradeReviewRepository,
+)
 
 __all__ = [
     "PushLogRepository",
@@ -15,4 +20,7 @@ __all__ = [
     "SignalEventRepository",
     "AlertDedupRepository",
     "StatsRepository",
+    "PaperTradeRepository",
+    "TradeSignalLinkRepository",
+    "TradeReviewRepository",
 ]

@@ -127,7 +127,7 @@ def get_pool(pool: str = "sse_dividend") -> pd.DataFrame:
     """获取候选池成分股（代码+名称）"""
     import akshare as ak
     cfg = POOLS[pool]
-    df = ak.index_stock_cons_csindex(symbol=cfg["index_code"])
+    df = _retry(lambda: ak.index_stock_cons_csindex(symbol=cfg["index_code"]))
     return df[["成分券代码", "成分券名称"]].rename(
         columns={"成分券代码": "symbol", "成分券名称": "name"}
     )
@@ -219,7 +219,9 @@ def _compute_score(rec: dict) -> float:
 
     score = 0
     score += 0.30 * _norm(div_count, 5, 20)          # 分红习惯
-    score += 0.25 * _norm(1 / max(pb, 0.1), 1.5, 3)  # PB 反向
+    # PB 反向：PB 越低得分越高；区间 [0.3, 0.7] 对齐硬门槛 _MAX_PB=0.7
+    pb_for_score = pb if isinstance(pb, (int, float)) and pb > 0 else 0.7
+    score += 0.25 * _norm(0.7 - min(pb_for_score, 0.7), 0.0, 0.4)  # PB 反向
     score += 0.20 * _norm(roe, 0, 20)                # ROE
     score += 0.15 * _norm(1 / max(pe, 1), 0.1, 0.3)  # PE 反向
     score += 0.10 * _norm(mc, 100, 2000)             # 市值稳定性
@@ -259,12 +261,10 @@ def screen(pool: str = "sse_dividend", top_n: Optional[int] = None) -> list[dict
     pool_df = get_pool(pool)
     logger.info("[cigar_butt] 候选池 %d 只", len(pool_df))
 
-    # 一次性拉全部分红数据（快）
-    try:
-        all_div = ak.stock_history_dividend()
-    except Exception as e:
-        logger.warning("[cigar_butt] 分红数据拉取失败：%s", e)
-        all_div = pd.DataFrame(columns=["代码", "分红次数", "年均股息"])
+    # 一次性拉全部分红数据（快）——失败直接 raise，避免“空 DF → 全城淘汰”
+    all_div = _retry(lambda: ak.stock_history_dividend())
+    if all_div is None or all_div.empty:
+        raise RuntimeError("stock_history_dividend 返回空，无法判定分红门槛")
 
     results = []
     now_utc = datetime.utcnow()

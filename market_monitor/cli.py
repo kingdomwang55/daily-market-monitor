@@ -382,6 +382,95 @@ def cmd_calendar(args):
         print("\n✅ 已推送飞书" if ok else "\n❌ 推送失败")
 
 
+def cmd_db_init(args):
+    """初始化 DB + 种子数据"""
+    from .data import init_db
+    from .data.seeds import seed_all
+    from .data.database import db_info
+
+    print(f"🗄️  DB: {db_info()}")
+    print("🔨 建表...")
+    init_db()
+    print("🌱 写入种子数据...")
+    seed_all()
+    print("✅ DB 就绪")
+
+
+def cmd_db_info(args):
+    """查看表行数"""
+    from .data import get_session
+    from .data.database import db_info
+    from .data import (
+        MonitorRegistry, SymbolRegistry, SignalTypeRegistry,
+        MarketSnapshot, PushLog, SignalEvent, AlertDedup,
+    )
+    from sqlalchemy import select, func
+
+    print(f"🗄️  DB: {db_info()}\n")
+    with get_session() as s:
+        print(f"{'Table':<24} {'Rows':>10}")
+        print("-" * 36)
+        for tbl, name in [
+            (MonitorRegistry, "monitor_registry"),
+            (SymbolRegistry, "symbol_registry"),
+            (SignalTypeRegistry, "signal_type_registry"),
+            (MarketSnapshot, "market_snapshot"),
+            (PushLog, "push_log"),
+            (SignalEvent, "signal_event"),
+            (AlertDedup, "alert_dedup"),
+        ]:
+            n = s.execute(select(func.count()).select_from(tbl)).scalar()
+            print(f"{name:<24} {n:>10}")
+
+
+def cmd_db_query(args):
+    """查推送历史"""
+    from .data import get_session
+    from .data.repositories import PushLogRepository
+
+    with get_session() as s:
+        rows = PushLogRepository(s).recent(
+            monitor=args.monitor,
+            days=args.days,
+            min_level=args.level,
+            limit=args.limit,
+        )
+        if not rows:
+            print(f"💭 没找到符合条件的推送")
+            return
+        print(f"📋 共 {len(rows)} 条推送:\n")
+        for r in rows:
+            lvl_icon = ["⚪", "🟡", "🟠", "🔴"][min(r.max_level, 3)]
+            ts_local = r.ts.strftime("%Y-%m-%d %H:%M")
+            scen = f" [{r.scenario}]" if r.scenario else ""
+            print(f"  {lvl_icon} L{r.max_level} {ts_local} {r.monitor}{scen}")
+            print(f"     {(r.title or '')[:60]}")
+
+
+def cmd_db_stats(args):
+    """推送统计"""
+    from .data import get_session
+    from .data.repositories import StatsRepository
+
+    with get_session() as s:
+        repo = StatsRepository(s)
+
+        print(f"📊 最近 {args.days} 天 monitor 推送统计:\n")
+        print(f"  {'Monitor':<20} {'Count':>8} {'AvgL':>6} {'MaxL':>6}")
+        print("  " + "-" * 42)
+        for row in repo.monitor_stats(args.days):
+            print(f"  {row['monitor']:<20} {row['count']:>8} "
+                  f"{row['avg_level']:>6} {row['max_level']:>6}")
+
+        sig_stats = repo.signal_frequency(args.days)
+        if sig_stats:
+            print(f"\n🎯 信号类型频次:\n")
+            print(f"  {'Signal Type':<24} {'Count':>8}")
+            print("  " + "-" * 34)
+            for row in sig_stats:
+                print(f"  {row['signal_type']:<24} {row['count']:>8}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -483,6 +572,27 @@ def main():
     p_calendar.add_argument("--month", help="查某月完整日历 YYYY-MM")
     p_calendar.add_argument("--push", action="store_true", help="推送到飞书")
     p_calendar.set_defaults(func=cmd_calendar)
+
+    # db（Phase 1 新增）
+    p_db = sub.add_parser("db", help="数据库相关命令")
+    db_sub = p_db.add_subparsers(dest="action", required=True)
+
+    p_db_init = db_sub.add_parser("init", help="初始化 DB + 写入种子数据")
+    p_db_init.set_defaults(func=cmd_db_init)
+
+    p_db_info = db_sub.add_parser("info", help="查看当前 DB 信息 + 表行数统计")
+    p_db_info.set_defaults(func=cmd_db_info)
+
+    p_db_query = db_sub.add_parser("query", help="查推送历史")
+    p_db_query.add_argument("--monitor", help="筛选 monitor")
+    p_db_query.add_argument("--days", type=int, default=7, help="最近多少天（默认 7）")
+    p_db_query.add_argument("--level", type=int, default=0, help="最低 level（默认 0）")
+    p_db_query.add_argument("--limit", type=int, default=20, help="最多多少条（默认 20）")
+    p_db_query.set_defaults(func=cmd_db_query)
+
+    p_db_stats = db_sub.add_parser("stats", help="推送统计")
+    p_db_stats.add_argument("--days", type=int, default=30, help="最近多少天")
+    p_db_stats.set_defaults(func=cmd_db_stats)
 
     args = parser.parse_args()
     args.func(args)

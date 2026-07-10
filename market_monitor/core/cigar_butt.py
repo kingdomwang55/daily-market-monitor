@@ -366,10 +366,13 @@ def format_report(results: list[dict], pool: str = "sse_dividend") -> str:
         lines.append("")
         lines.append("最接近通过（按 PB 升序 Top5）：")
         for r in near:
+            pb_s = f"{r['pb']:.2f}" if r['pb'] is not None else "-"
+            pe_s = f"{r['pe']:.2f}" if r['pe'] is not None else "-"
+            roe_s = f"{r['roe_3y_avg']:.2f}%" if r['roe_3y_avg'] is not None else "-"
             lines.append(
                 f"  · {r['symbol']} {r['name']:<8} "
-                f"PB={r['pb']:.2f} PE={r['pe']:.2f} 分红={r['dividend_count']}次 "
-                f"ROE均={r['roe_3y_avg'] or 0:.2f}%  "
+                f"PB={pb_s} PE={pe_s} 分红={r['dividend_count']}次 "
+                f"ROE均={roe_s}  "
                 f"→ 缺: {r['reason']}"
             )
         return "\n".join(lines)
@@ -378,8 +381,8 @@ def format_report(results: list[dict], pool: str = "sse_dividend") -> str:
     lines.append(f"{'排名':<4}{'代码':<9}{'名称':<10}{'PB':>6}{'PE':>7}{'分红次数':>8}{'3Y ROE':>9}{'评分':>6}")
     for i, r in enumerate(passed, 1):
         name = r["name"][:6]
-        pb = f"{r['pb']:.2f}"
-        pe = f"{r['pe']:.2f}"
+        pb = f"{r['pb']:.2f}" if r['pb'] is not None else "-"
+        pe = f"{r['pe']:.2f}" if r['pe'] is not None else "-"
         dc = f"{r['dividend_count']}"
         roe = f"{r['roe_3y_avg']:.1f}%" if r['roe_3y_avg'] is not None else "-"
         sc = f"{r['score']:.1f}"

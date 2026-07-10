@@ -5,20 +5,20 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from market_monitor.core.cigar_butt import run_screen, format_top
+from market_monitor.core.cigar_butt import screen, format_report
 from market_monitor.core.feishu import send_text
 
 
 def main():
     try:
-        results = run_screen(sleep_between=0.5, verbose=False)
-        report = format_top(results, top_n=20)
-        
+        results = screen(pool="sse_dividend")
+        report = format_report(results, pool="sse_dividend")
+
         # 加日期头
         from datetime import datetime
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         message = f"📅 {date_str} · 周报\n\n{report}"
-        
+
         send_text(message, push_type="cigar_butt_weekly")
         print(f"✅ 烟蒂股筛选完成，通过 {sum(1 for r in results if r['passed'])} 只")
     except Exception as e:

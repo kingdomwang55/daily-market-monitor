@@ -13,6 +13,9 @@ from ..core import sector_flow as sf
 from ..core import geopolitics as geo
 from ..core import scenario as sc
 from ..core import position_tracker as pos_trk
+from ..core import ah_premium as ah
+from ..core import etf_premium as etf
+from ..core import index_valuation as iv
 
 
 class EveningMonitor(BaseMonitor):
@@ -540,6 +543,41 @@ class EveningMonitor(BaseMonitor):
         geo_events = data.get("geo_events") or []
         if geo_events:
             report += "\n\n" + geo.format_geo_brief(geo_events, top=8)
+
+        # W2: AH 溢价套利监控
+        try:
+            ah_results = ah.fetch_ah_premium()
+            if ah_results:
+                report += "\n\n━━━━━━━━━━━━━━━\n" + ah.format_summary(ah_results, top_n=20)
+                ah_signals = ah.get_signals(ah_results, verify_rare=True)
+                if ah_signals:
+                    report += "\n\n" + ah.format_signals(ah_signals)
+        except Exception as e:
+            self.log(f"[evening] AH 溢价监控异常：{e}")
+
+        # W3: ETF 折溢价监控
+        try:
+            etf_results = etf.fetch_etf_premium()
+            if etf_results:
+                report += "\n\n━━━━━━━━━━━━━━━\n" + etf.format_summary(etf_results, top_n=20)
+                etf_signals = etf.get_signals(etf_results, verify_rare=True)
+                if etf_signals:
+                    report += "\n\n" + etf.format_signals(etf_signals)
+        except Exception as e:
+            self.log(f"[evening] ETF 折溢价监控异常：{e}")
+
+        # W4: 指数估值分位监控（盘后快照 + 极端信号 + 一致性告警）
+        try:
+            iv_records = iv.fetch_and_snapshot()
+            if iv_records:
+                report += "\n\n━━━━━━━━━━━━━━━\n" + iv.format_summary(iv_records)
+                iv_signals = iv.get_signals(iv_records)
+                iv_warnings = iv.cross_check(iv_records)
+                sig_txt = iv.format_signals(iv_signals, iv_warnings)
+                if sig_txt:
+                    report += "\n\n" + sig_txt
+        except Exception as e:
+            self.log(f"[evening] 指数估值分位监控异常：{e}")
 
         # AI 分析
         prompt = self._build_ai_prompt(data, signals)

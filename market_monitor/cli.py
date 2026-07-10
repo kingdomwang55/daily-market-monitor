@@ -723,6 +723,27 @@ def cmd_trade_show(args):
             print(f"\n  关联信号: signal_event #{t.signal_event_id}")
 
 
+# ============================================================
+# W4 Phase 2: 烟蒂股筛选器
+# ============================================================
+def cmd_screen(args):
+    """跑一次烟蒂股筛选，输出报告（可选推送飞书）"""
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    from .core import cigar_butt as cb
+
+    print(f"🚀 开始筛选 pool={args.pool}（预计 3-5 分钟）...")
+    results = cb.screen(pool=args.pool, top_n=args.top)
+    report = cb.format_report(results, pool=args.pool)
+    print()
+    print(report)
+
+    if args.send:
+        from .core.feishu import send_text
+        send_text(report)
+        print("\n✅ 已推送飞书")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -891,6 +912,13 @@ def main():
     p_trev.add_argument("--period", default="week", choices=["week", "month"], help="周报或月报")
     p_trev.add_argument("--key", help="时间 key，例 2026-W28 或 2026-07（默认本周/本月）")
     p_trev.set_defaults(func=cmd_trade_review)
+
+    # W4 Phase 2: 烟蒂股筛选器
+    p_screen = sub.add_parser("screen", help="烟蒂股筛选器（基于上证红利成分股）")
+    p_screen.add_argument("--pool", default="sse_dividend", help="候选池（sse_dividend）")
+    p_screen.add_argument("--top", type=int, help="只输出前 N 条")
+    p_screen.add_argument("--send", action="store_true", help="同时推送到飞书")
+    p_screen.set_defaults(func=cmd_screen)
 
     args = parser.parse_args()
     args.func(args)

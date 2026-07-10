@@ -11,6 +11,9 @@ from ..core import bonds as bd
 from ..core import sentiment as st
 from ..core import geopolitics as geo
 from ..core import scenario as sc
+from ..core import ah_premium as ah
+from ..core import etf_premium as etf
+from ..core import index_valuation as iv
 
 
 class MorningMonitor(BaseMonitor):
@@ -453,6 +456,41 @@ class MorningMonitor(BaseMonitor):
 
         # 每日教学锦囊(轮换)
         report += f"\n\n━━━━━━━━━━━━━━━\n{get_daily_tip()}"
+
+        # W2: AH 溢价套利监控（晨间快照 + 信号）
+        try:
+            ah_results = ah.fetch_ah_premium()
+            if ah_results:
+                report += "\n\n━━━━━━━━━━━━━━━\n" + ah.format_summary(ah_results, top_n=20)
+                ah_signals = ah.get_signals(ah_results, verify_rare=True)
+                if ah_signals:
+                    report += "\n\n" + ah.format_signals(ah_signals)
+        except Exception as e:
+            self.log(f"[morning] AH 溢价监控异常：{e}")
+
+        # W3: ETF 折溢价监控（晨间快照 + 信号）
+        try:
+            etf_results = etf.fetch_etf_premium()
+            if etf_results:
+                report += "\n\n━━━━━━━━━━━━━━━\n" + etf.format_summary(etf_results, top_n=20)
+                etf_signals = etf.get_signals(etf_results, verify_rare=True)
+                if etf_signals:
+                    report += "\n\n" + etf.format_signals(etf_signals)
+        except Exception as e:
+            self.log(f"[morning] ETF 折溢价监控异常：{e}")
+
+        # W4: 指数估值分位监控（晨间快照 + 极端信号）
+        try:
+            iv_records = iv.fetch_and_snapshot()
+            if iv_records:
+                report += "\n\n━━━━━━━━━━━━━━━\n" + iv.format_summary(iv_records)
+                iv_signals = iv.get_signals(iv_records)
+                iv_warnings = iv.cross_check(iv_records)
+                sig_txt = iv.format_signals(iv_signals, iv_warnings)
+                if sig_txt:
+                    report += "\n\n" + sig_txt
+        except Exception as e:
+            self.log(f"[morning] 指数估值分位监控异常：{e}")
 
         report += "\n\n(数据:新浪财经 · 分析:AI)"
 

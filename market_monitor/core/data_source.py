@@ -28,7 +28,63 @@ def sina_realtime(codes: List[str]) -> List[str]:
     """批量获取实时行情，返回原始 lines"""
     url = "http://hq.sinajs.cn/list=" + ",".join(codes)
     data = http_get(url)
-    return data.strip().split("\n")
+    lines = data.strip().split("\n")
+    # 新增：后台落库（异常不影响主流程）
+    try:
+        _save_realtime_snapshots(codes, lines)
+    except Exception as e:
+        print(f"[sina_realtime] 快照落库失败忽略: {e}", file=sys.stderr)
+    return lines
+
+
+def _save_realtime_snapshots(codes: List[str], lines: List[str]) -> None:
+    """将 sina_realtime 的结果以快照形式落库
+
+    需要区分不同类型（指数 / 股票 / 港股），根据 code 前缀判定：
+    - s_开头 → parse_index_simple
+    - hk开头 且后续为字母多 → hk_index / hk_stock 区分（一律用 parse_hk_index，注释里说明）
+    - 其他 → skip（先覆盖 sina 主要 code，其他后续扩展）
+    """
+    # 延迟导入避免循环依赖
+    try:
+        from ..data.database import get_session
+        from ..data.repositories import MarketSnapshotRepository
+    except Exception:
+        return  # 数据层不可用直接跳过
+
+    rows = []
+    for code, line in zip(codes, lines):
+        info = None
+        if code.startswith("s_"):
+            info = parse_index_simple(line)
+            stage = None
+        elif code.startswith("hkH"):
+            info = parse_hk_index(line)
+            stage = None
+        elif code.startswith("hk") and len(code) > 2 and code[2:].isdigit():
+            info = parse_hk_stock(line)
+            stage = None
+        else:
+            continue
+
+        if not info:
+            continue
+
+        rows.append({
+            "symbol": code,
+            "price": info.get("close"),
+            "prev_close": info.get("pre_close"),
+            "pct": info.get("pct"),
+            "stage": stage,
+            "source": "sina",
+            "raw": {"name": info.get("name")},
+        })
+
+    if not rows:
+        return
+
+    with get_session() as s:
+        MarketSnapshotRepository(s).bulk_create(rows)
 
 
 def parse_index_simple(line: str) -> Optional[Dict]:

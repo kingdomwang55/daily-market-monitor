@@ -12,6 +12,7 @@ from ..core import sentiment as st
 from ..core import sector_flow as sf
 from ..core import geopolitics as geo
 from ..core import scenario as sc
+from ..core import position_tracker as pos_trk
 
 
 class EveningMonitor(BaseMonitor):
@@ -43,6 +44,7 @@ class EveningMonitor(BaseMonitor):
         ("gb_ixic", "纳斯达克", "us"),
         ("gb_inx", "标普500", "us"),
         ("hf_CL", "WTI原油", "hf"),
+        ("hf_GC", "COMEX金", "hf"),
         ("hf_SI", "COMEX白银", "hf"),
         ("nf_AU0", "沪金主力", "nf"),
         ("DINIW", "美元指数", "dxy"),
@@ -168,6 +170,22 @@ class EveningMonitor(BaseMonitor):
             print(f"[evening] 地缘事件获取失败: {e}")
             result["geo_events"] = []
 
+        # P3-1: 仓位健康度
+        try:
+            pos_data = pos_trk.load_positions()
+            if pos_data.get("positions"):
+                pos_prices = pos_trk.fetch_current_prices(pos_data)
+                # 对于没有 symbol 的持仓，用 entry_price 兜底
+                for p in pos_data["positions"]:
+                    if p["id"] not in pos_prices:
+                        pos_prices[p["id"]] = float(p.get("entry_price", 0))
+                result["position_health"] = pos_trk.calc_position_health(pos_data, pos_prices)
+            else:
+                result["position_health"] = None
+        except Exception as e:
+            print(f"[evening] 仓位健康度获取失败: {e}")
+            result["position_health"] = None
+
         return result
 
     def _format_report(self, data):
@@ -233,11 +251,28 @@ class EveningMonitor(BaseMonitor):
         # 国际市场(前一交易日)
         if data.get("overseas"):
             lines.append("\n【前一交易日 · 国际市场】")
+            # 黄金统一展示（美元/盎司 + 人民币/克）——Steven 偏好
+            comex_g = data["overseas"].pop("COMEX金", None)
+            shg = data["overseas"].pop("沪金主力", None)
             for name, q in data["overseas"].items():
                 price = q.get("price", q.get("close", 0))
                 pct = q.get("pct", 0)
                 unit = "%" if name == "美债10Y" else ""
                 lines.append(f"  {name:8s}: {price:>10.2f}{unit} ({pct:+.2f}%)")
+            if comex_g or shg:
+                from ..core.gold_price import format_gold
+                gold_line = format_gold(
+                    usd_per_oz=comex_g["price"] if comex_g else None,
+                    cny_per_gram=shg["price"] if shg else None,
+                    pct=comex_g["pct"] if comex_g else (shg["pct"] if shg else None),
+                    label="",
+                ).strip()
+                lines.append(f"  黄金    : {gold_line}")
+            # 把取出的金价还回字典（供后续 AI/交叉信号使用）
+            if comex_g:
+                data["overseas"]["COMEX金"] = comex_g
+            if shg:
+                data["overseas"]["沪金主力"] = shg
 
         # 泪深港通资金流
         south = data.get("south_latest") or {}
@@ -388,6 +423,10 @@ class EveningMonitor(BaseMonitor):
         else:
             p2_scenario = ""
 
+        # P3-1: 仓位健康度摘要
+        health = data.get("position_health")
+        p3_position = pos_trk.signals_summary_for_ai(health) if health else ""
+
         # 盘前防呆
         all_zero = all(
             q.get("pct", 0) == 0 and q.get("stage") != "live"
@@ -437,6 +476,8 @@ class EveningMonitor(BaseMonitor):
 {p2_geo}
 
 {p2_scenario}
+
+{p3_position}
 
 {signals_text}
 """
@@ -511,6 +552,11 @@ class EveningMonitor(BaseMonitor):
 
         # 每日教学锦囊(轮换)
         report += f"\n\n━━━━━━━━━━━━━━━\n{get_daily_tip()}"
+
+        # P3-1: 仓位健康度（在前瞻性清单之前、教学锦囊之后）
+        health = data.get("position_health")
+        if health:
+            report += "\n\n━━━━━━━━━━━━━━━\n" + pos_trk.format_health_report(health)
 
         # 前瞻性观察清单（明日关注）
         try:

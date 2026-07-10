@@ -40,6 +40,7 @@ class MorningMonitor(BaseMonitor):
     ]
     COMMODITIES = [
         ("hf_CL", "WTI原油", "hf"),
+        ("hf_GC", "COMEX金", "hf"),
         ("hf_SI", "COMEX白银", "hf"),
         ("nf_AU0", "沪金主力", "nf"),
         ("nf_AG0", "沪银主力", "nf"),
@@ -168,7 +169,20 @@ class MorningMonitor(BaseMonitor):
         parts.append("【大宗商品】")
         parts.append(_row("WTI原油", "WTI原油"))
         parts.append(_row("COMEX银", "COMEX白银"))
-        parts.append(_row("沪金", "沪金主力"))
+        # 黄金统一用美元/盎司为主，括号备注人民币/克（Steven 偏好）
+        from ..core.gold_price import format_gold
+        comex_g = data.get("COMEX金")
+        shg = data.get("沪金主力")
+        if comex_g or shg:
+            parts.append(
+                "  黄金    : "
+                + format_gold(
+                    usd_per_oz=comex_g["price"] if comex_g else None,
+                    cny_per_gram=shg["price"] if shg else None,
+                    pct=comex_g["pct"] if comex_g else (shg["pct"] if shg else None),
+                    label="",
+                ).strip()
+            )
         parts.append(_row("沪银", "沪银主力"))
 
         parts.append("")
@@ -263,7 +277,20 @@ class MorningMonitor(BaseMonitor):
         facts.append("\n== 大宗商品 ==")
         _fact("WTI 原油", "WTI原油")
         _fact("COMEX 白银", "COMEX白银")
-        _fact("沪金主力", "沪金主力")
+        # 黄金：美元/盎司为主，人民币/克备注
+        from ..core.gold_price import format_gold
+        comex_g = data.get("COMEX金")
+        shg = data.get("沪金主力")
+        if comex_g or shg:
+            facts.append(
+                "黄金: "
+                + format_gold(
+                    usd_per_oz=comex_g["price"] if comex_g else None,
+                    cny_per_gram=shg["price"] if shg else None,
+                    pct=comex_g["pct"] if comex_g else (shg["pct"] if shg else None),
+                    label="",
+                ).strip()
+            )
         _fact("沪银主力", "沪银主力")
 
         facts.append("\n== 汇市 & 风险指标 ==")

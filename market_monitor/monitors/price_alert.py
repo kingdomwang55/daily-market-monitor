@@ -2,6 +2,7 @@
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
 from ..core.teaching import price_alert_teaching
+from ..core.gold_price import format_gold, fetch_comex_gold, fetch_usdcnh, cny_g_to_usd_oz
 
 
 class PriceAlertMonitor(BaseMonitor):
@@ -45,6 +46,7 @@ class PriceAlertMonitor(BaseMonitor):
 
         alerts = []
         teachings = []  # 触发时附上的教学解读
+        breaks = []   # 结构化触发记录，用于落库
         for t in targets:
             code = t["code"]
             name = t["name"]
@@ -57,19 +59,49 @@ class PriceAlertMonitor(BaseMonitor):
             add_pos = t.get("add_position")
 
             # 止损位（首次跌破触发）
+            is_gold = t.get("is_gold", False)
+
+            def _fmt(p: float, threshold: float) -> str:
+                """黄金附加美元/盎司展示（Steven 偏好）"""
+                if is_gold:
+                    usdcnh = fetch_usdcnh()
+                    price_usd = cny_g_to_usd_oz(p, usdcnh)
+                    thr_usd = cny_g_to_usd_oz(threshold, usdcnh)
+                    return (
+                        f"${price_usd:.2f}/oz (¥{p:.2f}/g) "
+                        f"vs 阈值 ${thr_usd:.2f}/oz (¥{threshold:.2f}/g)"
+                    )
+                return f"{p:.2f} vs 阈值 {threshold}"
+
             if stop_loss and price < stop_loss:
                 key = f"stop_{code}_{self.today}"
                 if not self.state.has(key) or self.force:
-                    alerts.append(f"🔻 {name} 跌破止损位: {price:.2f} < {stop_loss}")
+                    if is_gold:
+                        alerts.append(f"🔻 {name} 跌破止损位: {_fmt(price, stop_loss)}")
+                    else:
+                        alerts.append(f"🔻 {name} 跌破止损位: {price:.2f} < {stop_loss}")
                     teachings.append(price_alert_teaching(name, price, stop_loss, "down"))
+                    breaks.append({
+                        "code": code, "name": name,
+                        "direction": "stop_break",
+                        "price": price, "threshold": stop_loss,
+                    })
                     self.state.set(key)
 
             # 加仓位（首次突破触发）
             if add_pos and price > add_pos:
                 key = f"add_{code}_{self.today}"
                 if not self.state.has(key) or self.force:
-                    alerts.append(f"🔺 {name} 突破加仓位: {price:.2f} > {add_pos}")
+                    if is_gold:
+                        alerts.append(f"🔺 {name} 突破加仓位: {_fmt(price, add_pos)}")
+                    else:
+                        alerts.append(f"🔺 {name} 突破加仓位: {price:.2f} > {add_pos}")
                     teachings.append(price_alert_teaching(name, price, add_pos, "up"))
+                    breaks.append({
+                        "code": code, "name": name,
+                        "direction": "add_break",
+                        "price": price, "threshold": add_pos,
+                    })
                     self.state.set(key)
 
             # 回到区间清 marker
@@ -90,8 +122,30 @@ class PriceAlertMonitor(BaseMonitor):
             parts.append("\n\n".join(teachings))
 
         message = "\n".join(parts)
-        if self.send(message):
-            self.log(f"✅ 已发送 {self.now_str}")
+
+        # ─── 落库 meta：多个触发取组合类型，metrics 写进 1 条 push_log ───
+        directions = {b["direction"] for b in breaks}
+        if directions == {"stop_break"}:
+            signal_type = "price_stop_break"
+        elif directions == {"add_break"}:
+            signal_type = "price_add_break"
+        elif directions:
+            signal_type = "price_mixed_break"
+        else:
+            signal_type = "price_neutral"
+
+        max_level = 2 if breaks else 0
+        meta = {
+            "scenario": signal_type,
+            "max_level": max_level,
+            "signal_type": signal_type,
+            "breaks_count": len(breaks),
+            "metrics": {
+                "breaks": breaks,
+            },
+        }
+        if self.send(message, meta=meta):
+            self.log(f"✅ 已发送 {self.now_str} type={signal_type} breaks={len(breaks)}")
             self.state.save()
             return True
         return False

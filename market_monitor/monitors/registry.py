@@ -3,6 +3,7 @@ from .stabilize import StabilizeMonitor
 from .us_market import UsMarketMonitor
 from .hk_market import HkMarketMonitor
 from .shock import ShockMonitor
+from .hk_shock import HkShockMonitor
 from .price_alert import PriceAlertMonitor
 from .morning import MorningMonitor
 from .evening import EveningMonitor
@@ -10,6 +11,8 @@ from .voice_monitor import VoiceMonitor
 from .macro_monitor import MacroMonitor
 from .review import ReviewMonitor
 from .monthly import MonthlyMonitor
+from .midday import MiddayMonitor
+from .pulse import PulseMonitor
 
 REGISTRY = {
     m.name: m for m in [
@@ -17,6 +20,7 @@ REGISTRY = {
         UsMarketMonitor,
         HkMarketMonitor,
         ShockMonitor,
+        HkShockMonitor,
         PriceAlertMonitor,
         MorningMonitor,
         EveningMonitor,
@@ -24,6 +28,8 @@ REGISTRY = {
         MacroMonitor,
         ReviewMonitor,
         MonthlyMonitor,
+        MiddayMonitor,
+        PulseMonitor,
     ]
 }
 

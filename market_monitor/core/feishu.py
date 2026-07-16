@@ -1,12 +1,27 @@
 """飞书推送"""
-import subprocess
 import json
 import sys
+import urllib.request
 from typing import Optional
 
 from .config import get_config
 from .text_utils import strip_markdown
 from . import push_logger
+
+
+def _post_json(url: str, payload: dict, headers: Optional[dict] = None,
+               timeout: int = 10) -> dict:
+    req_headers = {"Content-Type": "application/json"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=req_headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def send_text(message: str, user_id: Optional[str] = None, push_type: str = "manual", meta: Optional[dict] = None) -> bool:
@@ -35,31 +50,25 @@ def send_text(message: str, user_id: Optional[str] = None, push_type: str = "man
 
     try:
         # 获取 tenant_access_token
-        token_r = subprocess.run(
-            ["curl", "-s", "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-             "-H", "Content-Type: application/json",
-             "-d", json.dumps({"app_id": app_id, "app_secret": app_secret})],
-            capture_output=True, text=True, timeout=10,
+        td = _post_json(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            {"app_id": app_id, "app_secret": app_secret},
         )
-        td = json.loads(token_r.stdout)
         if td.get("code") != 0:
             print(f"[feishu] 获取 token 失败: {td}", file=sys.stderr)
             return False
         token = td["tenant_access_token"]
 
         # 发送消息
-        send_r = subprocess.run(
-            ["curl", "-s", "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
-             "-H", f"Authorization: Bearer {token}",
-             "-H", "Content-Type: application/json",
-             "-d", json.dumps({
-                 "receive_id": receive_id,
-                 "msg_type": "text",
-                 "content": json.dumps({"text": message}, ensure_ascii=False),
-             })],
-            capture_output=True, text=True, timeout=10,
+        result = _post_json(
+            "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+            {
+                "receive_id": receive_id,
+                "msg_type": "text",
+                "content": json.dumps({"text": message}, ensure_ascii=False),
+            },
+            headers={"Authorization": f"Bearer {token}"},
         )
-        result = json.loads(send_r.stdout)
         if result.get("code") == 0:
             # 推送成功后同步写日志（失败不影响主链路）
             push_logger.append(message, push_type=push_type, meta=meta)

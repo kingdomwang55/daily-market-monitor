@@ -27,10 +27,11 @@ import logging
 import sqlite3
 import time
 from datetime import datetime, date
-from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+
+from .db_path import ensure_sqlite_parent, sqlite_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ _SLEEP_BETWEEN_STOCKS = 0.4        # 秒
 _RETRY_TIMES = 2
 
 # 数据库
-_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "market.db"
+_DB_PATH = sqlite_db_path()
 
 # 银行股白名单（行业属性特殊，PB<0.4 非退市风险）
 _BANK_SYMBOLS = {
@@ -78,6 +79,7 @@ POOLS = {
 # ============================================================
 
 def _init_table() -> None:
+    ensure_sqlite_parent(_DB_PATH)
     conn = sqlite3.connect(_DB_PATH)
     try:
         conn.execute("""

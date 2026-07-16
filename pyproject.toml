@@ -8,6 +8,17 @@ dependencies = [
     "pyyaml>=6.0",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
+    "requests>=2.31",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+analytics = [
+    "akshare>=1.14",
+]
+dev = [
+    "pytest>=8.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.scripts]

@@ -37,10 +37,15 @@ cd ~/projects/market-monitor
 
 # 2. 复制配置模板
 cp config/config.example.yaml config/config.yaml
-# 编辑 config.yaml，填入飞书 user_id 等
+# 编辑 config.yaml，填入飞书 app_id / app_secret / user_id 等
 
-# 3. 安装依赖（可选，纯标准库也能跑）
-pip install -e .
+# 3. 创建虚拟环境并安装依赖
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+# 如需 AH/ETF/估值等 akshare 数据扩展：
+# python -m pip install -e '.[analytics]'
 
 # 4. 手动测试单个监控
 python -m market_monitor.cli run stabilize --force
@@ -48,7 +53,10 @@ python -m market_monitor.cli run stabilize --force
 # 5. 查看所有监控状态
 python -m market_monitor.cli status
 
-# 6. 安装到 launchd（macOS）
+# 6. 检查本机环境与配置
+python -m market_monitor.cli doctor
+
+# 7. 安装到 launchd（macOS）
 bash scripts/install.sh
 ```
 
@@ -82,7 +90,30 @@ python -m market_monitor.cli status
 
 # 测试飞书发送
 python -m market_monitor.cli test-feishu "Hello 🐉"
+
+# 本机健康检查（缺配置/路径/launchd 模板等会报错）
+python -m market_monitor.cli doctor
+
+# CI/无凭据健康检查
+python -m market_monitor.cli doctor --ci
+
+# 本地回归验证
+bash scripts/verify.sh
 ```
+
+## 数据库与排障
+
+默认数据库在 `data/market.db`。如需迁移到其他位置，可用环境变量覆盖：
+
+```bash
+export MARKET_DB_URL="sqlite:////absolute/path/to/market.db"
+python -m market_monitor.cli doctor
+python -m alembic -c alembic.ini upgrade head
+python -m market_monitor.cli db init
+```
+
+`doctor` 会显示当前数据库目标路径；若目录不可创建或配置仍是占位符，会在安装前失败。
+新机器上推荐先跑 Alembic 迁移，再执行 `db init` 写入种子数据。
 
 ## 🎯 设计原则
 

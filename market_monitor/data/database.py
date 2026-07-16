@@ -7,17 +7,16 @@
 - 业务代码永远只调 get_session()，不知道底层是啥
 """
 import os
-from pathlib import Path
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 
+from ..core.db_path import DEFAULT_DB_PATH, sqlite_path_from_url
+
 
 # ─── 默认 DB 位置 ───────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "market.db"
 DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DB_URL = os.getenv("MARKET_DB_URL", f"sqlite:///{DEFAULT_DB_PATH}")
@@ -84,8 +83,9 @@ def init_db(create_all: bool = True):
 
 def db_info() -> dict:
     """返回当前 DB 状态（供 CLI/API 使用）"""
+    sqlite_path = sqlite_path_from_url(DB_URL)
     return {
         "url": DB_URL,
         "is_sqlite": DB_URL.startswith("sqlite"),
-        "path": str(DEFAULT_DB_PATH) if DB_URL.startswith("sqlite") else None,
+        "path": str(sqlite_path) if sqlite_path is not None else None,
     }

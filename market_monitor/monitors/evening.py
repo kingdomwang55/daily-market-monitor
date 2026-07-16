@@ -57,6 +57,12 @@ class EveningMonitor(BaseMonitor):
         ("^TNX", "美债10Y"),  # CBOE 10Y 国债收益率指数,直接就是百分比数值,如 4.485 = 4.485%
     ]
 
+    def _ai_enabled(self) -> bool:
+        return bool(
+            self.config.get("evening_report.use_ai", True)
+            and self.config.get("ai.enabled", True)
+        )
+
     def _gather_all(self):
         """收集所有数据"""
         result = {
@@ -580,13 +586,14 @@ class EveningMonitor(BaseMonitor):
             self.log(f"[evening] 指数估值分位监控异常：{e}")
 
         # AI 分析
-        prompt = self._build_ai_prompt(data, signals)
-        analysis = ai_chat(prompt, temperature=0.7, max_tokens=1400)
+        if self._ai_enabled():
+            prompt = self._build_ai_prompt(data, signals)
+            analysis = ai_chat(prompt, temperature=0.7, max_tokens=1400)
 
-        if analysis:
-            report += f"\n\n━━━━━━━━━━━━━━━\n🤖 AI 市场解读\n\n{analysis}"
-        else:
-            report += "\n\n(AI 分析暂不可用)"
+            if analysis:
+                report += f"\n\n━━━━━━━━━━━━━━━\n🤖 AI 市场解读\n\n{analysis}"
+            else:
+                report += "\n\n(AI 分析暂不可用)"
 
         # 每日教学锦囊(轮换)
         report += f"\n\n━━━━━━━━━━━━━━━\n{get_daily_tip()}"

@@ -14,8 +14,8 @@ from market_monitor.core.launchd import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LAUNCHD_DIR = PROJECT_ROOT / "launchd"
-PYTHON = "$PROJECT_ROOT/.venv/bin/python"
+LAUNCHD_DIR = Path(os.environ.get("MARKET_MONITOR_LAUNCHD_DIR", PROJECT_ROOT / "launchd"))
+PYTHON = os.environ.get("MARKET_MONITOR_PYTHON", sys.executable)
 
 # python -m market_monitor.cli run <name>
 def make_cli_args(monitor_name: str, extra_args=None) -> tuple:
@@ -118,6 +118,12 @@ def main():
         build_plist_via_module("com.market-monitor.shock", "shock", schedule)
     )
 
+    # ===== 4b. hk-shock（港股异动，每 10 分钟） =====
+    schedule = make_interval_schedule(600)
+    (LAUNCHD_DIR / "com.market-monitor.hk-shock.plist").write_text(
+        build_plist_via_module("com.market-monitor.hk-shock", "hk_shock", schedule)
+    )
+
     # ===== 5. price-alert（关键点位，每 30 分钟） =====
     schedule = make_interval_schedule(1800)
     (LAUNCHD_DIR / "com.market-monitor.price-alert.plist").write_text(
@@ -140,6 +146,18 @@ def main():
     schedule = make_calendar_schedule(weekday_range(weekdays, [(7, 30)]))
     (LAUNCHD_DIR / "com.market-monitor.voice.plist").write_text(
         build_plist_via_module("com.market-monitor.voice", "voice", schedule)
+    )
+
+    # ===== 9. review（周度复盘，周日 20:00） =====
+    schedule = make_calendar_schedule([{"weekday": 7, "hour": 20, "minute": 0}])
+    (LAUNCHD_DIR / "com.market-monitor.review.plist").write_text(
+        build_plist_via_module("com.market-monitor.review", "review", schedule)
+    )
+
+    # ===== 10. monthly（月度复盘，每月 1 日 09:00） =====
+    schedule = make_calendar_schedule([{"day": 1, "hour": 9, "minute": 0}])
+    (LAUNCHD_DIR / "com.market-monitor.monthly.plist").write_text(
+        build_plist_via_module("com.market-monitor.monthly", "monthly", schedule)
     )
 
     print("✅ plist 已生成到:", LAUNCHD_DIR)

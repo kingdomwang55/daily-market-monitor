@@ -24,12 +24,21 @@ from __future__ import annotations
 import logging
 import sqlite3
 from datetime import datetime, date, timedelta
-from pathlib import Path
 from typing import Optional
 
-import pandas as pd
+from .db_path import ensure_sqlite_parent, sqlite_db_path
 
 logger = logging.getLogger(__name__)
+
+
+def _pandas():
+    try:
+        import pandas as pd
+        return pd
+    except ImportError as e:
+        raise RuntimeError(
+            "指数估值分位监控需要 pandas，请先安装项目依赖: python3 -m pip install -e ."
+        ) from e
 
 
 # ============================================================
@@ -49,7 +58,7 @@ _WINDOW_5Y_DAYS = 1250   # 5 年 ≈ 1250 交易日
 _HIST_MIN_SAMPLES = 100  # 少于 100 样本不算分位
 
 # 数据库
-_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "market.db"
+_DB_PATH = sqlite_db_path()
 
 
 # ============================================================
@@ -78,6 +87,7 @@ INDEX_CSINDEX = [
 # ============================================================
 
 def _init_snapshot_table() -> None:
+    ensure_sqlite_parent(_DB_PATH)
     conn = sqlite3.connect(_DB_PATH)
     try:
         conn.execute("""
@@ -151,6 +161,7 @@ def _fetch_lg_pe(symbol_name: str) -> Optional[pd.DataFrame]:
              等权滚动市盈率、滚动市盈率、滚动市盈率中位数
     """
     import akshare as ak
+    pd = _pandas()
     try:
         df = _retry(lambda: ak.stock_index_pe_lg(symbol=symbol_name))
         df["日期"] = pd.to_datetime(df["日期"]).dt.date
@@ -166,6 +177,7 @@ def _fetch_lg_pb(symbol_name: str) -> Optional[pd.DataFrame]:
     返回列：日期、指数、市净率、等权市净率、市净率中位数
     """
     import akshare as ak
+    pd = _pandas()
     try:
         df = _retry(lambda: ak.stock_index_pb_lg(symbol=symbol_name))
         df["日期"] = pd.to_datetime(df["日期"]).dt.date
@@ -187,6 +199,7 @@ def _fetch_csindex(symbol: str) -> Optional[pd.DataFrame]:
     - 股息率1 = 近12个月，股息率2 = 近12个月加权
     """
     import akshare as ak
+    pd = _pandas()
     try:
         df = ak.stock_zh_index_value_csindex(symbol=symbol)
         df["日期"] = pd.to_datetime(df["日期"]).dt.date
@@ -202,6 +215,7 @@ def _fetch_csindex(symbol: str) -> Optional[pd.DataFrame]:
 
 def _percentile_of(values: pd.Series, current: float) -> Optional[float]:
     """返回 current 在 values 里的分位（百分比）；样本不够或值缺失返回 None"""
+    pd = _pandas()
     if current is None or pd.isna(current):
         return None
     v = values.dropna()

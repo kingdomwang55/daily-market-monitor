@@ -6,35 +6,29 @@
     <string>com.market-monitor.review</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$PROJECT_ROOT/.venv/bin/python</string>
+        <string>/Users/yehlv/idea-project/daily-market-monitor/.venv/bin/python</string>
         <string>-m</string>
         <string>market_monitor.cli</string>
         <string>run</string>
         <string>review</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>$PROJECT_ROOT</string>
+    <string>/Users/yehlv/idea-project/daily-market-monitor</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>$PROJECT_ROOT</string>
+        <string>/Users/yehlv/idea-project/daily-market-monitor</string>
     </dict>
     <key>StartCalendarInterval</key>
     <array>
         <dict>
-            <key>Weekday</key>
-            <integer>7</integer>
-            <key>Hour</key>
-            <integer>20</integer>
-            <key>Minute</key>
-            <integer>0</integer>
+            <key>Weekday</key><integer>7</integer>
+            <key>Hour</key><integer>20</integer>
+            <key>Minute</key><integer>0</integer>
         </dict>
     </array>
-    <key>StandardOutPath</key>
-    <string>/tmp/com.market-monitor.review.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/com.market-monitor.review.err</string>
-    <key>RunAtLoad</key>
-    <false/>
+    <key>StandardOutPath</key><string>/tmp/com.market-monitor.review.log</string>
+    <key>StandardErrorPath</key><string>/tmp/com.market-monitor.review.err</string>
+    <key>RunAtLoad</key><false/>
 </dict>
 </plist>

@@ -11,11 +11,17 @@ echo "源目录: $LAUNCHD_DIR"
 echo "目标: $DEST"
 echo ""
 
+PYTHON_BIN="${MARKET_MONITOR_PYTHON:-python3}"
+
 # 1. 生成最新 plist
-python3 "$PROJECT_ROOT/scripts/gen_launchd.py"
+MARKET_MONITOR_PYTHON="$PYTHON_BIN" "$PYTHON_BIN" "$PROJECT_ROOT/scripts/gen_launchd.py"
 echo ""
 
-# 2. 复制到 LaunchAgents
+# 2. 安装前做无凭据健康检查
+"$PYTHON_BIN" -m market_monitor.cli doctor --ci
+echo ""
+
+# 3. 复制到 LaunchAgents
 for f in "$LAUNCHD_DIR"/*.plist; do
     name=$(basename "$f")
     echo "→ 安装 $name"

@@ -144,5 +144,6 @@ evening_report:
 ai:
   enabled: true
   provider: custom
-  model: qwen3.7-plus
+  model: deepseek-v4-pro
+  fallback_model: glm-latest
   # base_url / api_key 从 config.yaml 或环境变量读取

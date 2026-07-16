@@ -62,7 +62,7 @@ class Config:
 
     @property
     def ai_model(self):
-        return self.get("ai.model", "deepseek-v4-flash")
+        return self.get("ai.model", "qwen3.7-plus")
 
     # ==== 通用 ====
     @property

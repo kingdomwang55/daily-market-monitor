@@ -144,5 +144,5 @@ evening_report:
 ai:
   enabled: true
   provider: custom
-  model: deepseek-v4-flash
+  model: qwen3.7-plus
   # base_url / api_key 从 config.yaml 或环境变量读取

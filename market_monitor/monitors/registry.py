@@ -31,6 +31,7 @@ REGISTRY = {
         MonitorSpec("monthly", "月度复盘", ".monthly", "MonthlyMonitor"),
         MonitorSpec("midday", "午间综述", ".midday", "MiddayMonitor"),
         MonitorSpec("pulse", "盘中脉搏", ".pulse", "PulseMonitor"),
+        MonitorSpec("shanghai_watch", "上证 3800 剧本", ".shanghai_watch", "ShanghaiWatchMonitor"),
     ]
 }
 

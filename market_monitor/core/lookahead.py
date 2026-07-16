@@ -18,7 +18,7 @@ from .config import get_config
 # 与 price_alert.py 保持一致的关键点位
 # 实际运行时从 config 拉取，这里做 fallback
 DEFAULT_KEY_LEVELS = {
-    "上证指数": {"stop_loss": 3830, "add_position": 4229},
+    "上证指数": {"stop_loss": 3700, "add_position": 3946},
     "创业板指": {"stop_loss": 3756, "add_position": 4147},
     "沪金主力": {"stop_loss": 862, "add_position": 970},
 }

@@ -46,3 +46,6 @@ data/backups/
 # 持仓文件（含月薪、成本价等敏感信息）
 positions.json
 
+
+# Personal notes (owner-only, private trade journals & analysis)
+notes/

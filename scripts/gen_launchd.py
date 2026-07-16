@@ -160,6 +160,20 @@ def main():
         build_plist_via_module("com.market-monitor.monthly", "monthly", schedule)
     )
 
+    # ===== 11. shanghai_watch（上证 3800 剧本） =====
+    # 盘中 09:35-15:05 每 20 分钟一次，15:30 斶收盘后再跑一次拿当日完整 K 线
+    intraday_times = []
+    for h, m_start in [(9, 35), (10, 0), (10, 30), (11, 0), (11, 25),
+                       (13, 15), (13, 45), (14, 15), (14, 45), (15, 5)]:
+        intraday_times.append((h, m_start))
+    intraday_times.append((15, 30))
+    schedule = make_calendar_schedule(weekday_range(weekdays, intraday_times))
+    (LAUNCHD_DIR / "com.market-monitor.shanghai-watch.plist").write_text(
+        build_plist_via_module(
+            "com.market-monitor.shanghai-watch", "shanghai_watch", schedule
+        )
+    )
+
     print("✅ plist 已生成到:", LAUNCHD_DIR)
     for f in sorted(LAUNCHD_DIR.glob("*.plist")):
         print(f"   {f.name}")

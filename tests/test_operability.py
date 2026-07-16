@@ -56,6 +56,22 @@ class CliOperabilityTests(unittest.TestCase):
             self.assertIn("launchd", result.stdout.lower())
             self.assertIn("registry", result.stdout.lower())
 
+    def test_doctor_ci_passes_on_clean_checkout_without_generated_launchd_files(self):
+        env = os.environ.copy()
+        env.pop("MARKET_MONITOR_LAUNCHD_DIR", None)
+
+        result = subprocess.run(
+            [sys.executable, "-m", "market_monitor.cli", "doctor", "--ci"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            env=env,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("launchd", result.stdout.lower())
+
     def test_doctor_reports_missing_local_config(self):
         config_path = ROOT / "config" / "config.yaml"
         if config_path.exists():

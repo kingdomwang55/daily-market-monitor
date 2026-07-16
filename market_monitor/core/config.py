@@ -62,7 +62,11 @@ class Config:
 
     @property
     def ai_model(self):
-        return self.get("ai.model", "qwen3.7-plus")
+        return self.get("ai.model", "deepseek-v4-pro")
+
+    @property
+    def ai_fallback_model(self):
+        return self.get("ai.fallback_model", "glm-latest")
 
     # ==== 通用 ====
     @property

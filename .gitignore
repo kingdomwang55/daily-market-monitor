@@ -25,6 +25,9 @@ logs/
 state/
 .state/
 
+# 本地生成的 launchd plist（由 scripts/gen_launchd.py 生成，含机器路径）
+launchd/*.plist
+
 # 编辑器
 .vscode/
 .idea/

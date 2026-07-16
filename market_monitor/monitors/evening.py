@@ -588,7 +588,7 @@ class EveningMonitor(BaseMonitor):
         # AI 分析
         if self._ai_enabled():
             prompt = self._build_ai_prompt(data, signals)
-            analysis = ai_chat(prompt, temperature=0.7, max_tokens=1400)
+            analysis = ai_chat(prompt, temperature=0.7, max_tokens=2500)
 
             if analysis:
                 report += f"\n\n━━━━━━━━━━━━━━━\n🤖 AI 市场解读\n\n{analysis}"

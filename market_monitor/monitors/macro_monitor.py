@@ -206,7 +206,7 @@ class MacroMonitor(BaseMonitor):
 
         # AI 分析
         prompt = self._build_ai_prompt(data, slot_label, hours)
-        analysis = ai_chat(prompt, temperature=0.5, max_tokens=1500)
+        analysis = ai_chat(prompt, temperature=0.5, max_tokens=3000)
 
         # 组装并发送
         report = self._format_report(data, analysis, slot_label, hours)

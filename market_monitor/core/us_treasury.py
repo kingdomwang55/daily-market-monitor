@@ -12,10 +12,9 @@ import csv
 import io
 import logging
 import time
+import urllib.request
 from datetime import date, datetime
 from typing import Optional
-
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +63,9 @@ def _fetch_year_csv(year: int) -> Optional[list[dict]]:
     last_exc = None
     for i in range(_RETRIES + 1):
         try:
-            resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT_S)
-            resp.raise_for_status()
-            text = resp.text
+            req = urllib.request.Request(url, headers=_HEADERS)
+            with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
+                text = resp.read().decode("utf-8")
             reader = csv.DictReader(io.StringIO(text))
             rows: list[dict] = []
             for row in reader:

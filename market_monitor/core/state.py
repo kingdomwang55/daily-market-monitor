@@ -1,5 +1,6 @@
 """状态管理"""
 import json
+import sys
 from pathlib import Path
 
 from .config import get_config
@@ -34,8 +35,8 @@ class State:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.path, "w") as f:
                 json.dump(self._data, f, ensure_ascii=False)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[state] 保存状态失败 {self.path}: {e}", file=sys.stderr)
 
     def clear(self):
         self._data = {}

@@ -22,8 +22,15 @@ PLIST_HEADER = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def make_calendar_entry(weekday: Optional[int], hour: int, minute: int) -> str:
+def make_calendar_entry(
+    weekday: Optional[int],
+    hour: int,
+    minute: int,
+    day: Optional[int] = None,
+) -> str:
     lines = ["        <dict>"]
+    if day is not None:
+        lines.append(f"            <key>Day</key><integer>{day}</integer>")
     if weekday is not None:
         lines.append(f"            <key>Weekday</key><integer>{weekday}</integer>")
     lines.append(f"            <key>Hour</key><integer>{hour}</integer>")
@@ -35,7 +42,7 @@ def make_calendar_entry(weekday: Optional[int], hour: int, minute: int) -> str:
 def make_calendar_schedule(entries: List[Dict]) -> str:
     """生成 StartCalendarInterval 段"""
     body = "\n".join(
-        make_calendar_entry(e.get("weekday"), e["hour"], e["minute"])
+        make_calendar_entry(e.get("weekday"), e["hour"], e["minute"], e.get("day"))
         for e in entries
     )
     return f"    <key>StartCalendarInterval</key>\n    <array>\n{body}\n    </array>"

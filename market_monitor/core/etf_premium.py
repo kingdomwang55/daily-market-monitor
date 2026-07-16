@@ -20,8 +20,9 @@ ETF 折溢价监控模块（重点跟踪 QDII/跨境 ETF）
 import logging
 import sqlite3
 from datetime import datetime, date, timedelta
-from pathlib import Path
 from typing import Optional
+
+from .db_path import ensure_sqlite_parent, sqlite_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ _HIST_MIN_SAMPLES = 30
 _HIST_WINDOW_DAYS = 250
 
 # 快照存储
-_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "market.db"
+_DB_PATH = sqlite_db_path()
 
 
 # ============================================================
@@ -76,7 +77,7 @@ CORE_ETFS = [
 
 def _init_snapshot_table():
     """初始化 ETF 溢价快照表"""
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ensure_sqlite_parent(_DB_PATH)
     conn = sqlite3.connect(str(_DB_PATH))
     try:
         conn.execute("""

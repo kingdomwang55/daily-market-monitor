@@ -50,6 +50,12 @@ class MorningMonitor(BaseMonitor):
     ]
     DXY_CODE = "DINIW"
 
+    def _ai_enabled(self) -> bool:
+        return bool(
+            self.config.get("morning_report.use_ai", True)
+            and self.config.get("ai.enabled", True)
+        )
+
     def _fetch_all(self):
         """一次性拉所有数据"""
         all_codes = (
@@ -446,13 +452,14 @@ class MorningMonitor(BaseMonitor):
             report += f"\n\n{cal_brief}"
 
         # AI 分析
-        prompt = self._build_ai_prompt(data, signals)
-        analysis = ai_chat(prompt, temperature=0.7, max_tokens=800)
+        if self._ai_enabled():
+            prompt = self._build_ai_prompt(data, signals)
+            analysis = ai_chat(prompt, temperature=0.7, max_tokens=800)
 
-        if analysis:
-            report += f"\n\n━━━━━━━━━━━━━━━\n🤖 AI 市场解读\n\n{analysis}"
-        else:
-            report += "\n\n(AI 分析暂不可用)"
+            if analysis:
+                report += f"\n\n━━━━━━━━━━━━━━━\n🤖 AI 市场解读\n\n{analysis}"
+            else:
+                report += "\n\n(AI 分析暂不可用)"
 
         # 每日教学锦囊(轮换)
         report += f"\n\n━━━━━━━━━━━━━━━\n{get_daily_tip()}"

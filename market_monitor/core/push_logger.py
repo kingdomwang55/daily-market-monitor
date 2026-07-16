@@ -6,20 +6,27 @@
 - 按日切分：logs/push_YYYY-MM-DD.jsonl
 """
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from .config import get_config
 
-# 日志根目录：项目根 logs/
-_LOG_ROOT = Path(__file__).resolve().parent.parent.parent / "logs"
+_DEFAULT_LOG_ROOT = Path(__file__).resolve().parent.parent.parent / "logs"
+
+
+def _log_root() -> Path:
+    """日志根目录：配置优先，配置不可用时回退项目 logs/。"""
+    try:
+        return Path(get_config().log_dir)
+    except Exception:
+        return _DEFAULT_LOG_ROOT
 
 
 def _today_path() -> Path:
     day = datetime.now().strftime("%Y-%m-%d")
-    return _LOG_ROOT / f"push_{day}.jsonl"
+    return _log_root() / f"push_{day}.jsonl"
 
 
 def append(message: str, push_type: str = "unknown", meta: Optional[dict] = None) -> None:
@@ -31,7 +38,8 @@ def append(message: str, push_type: str = "unknown", meta: Optional[dict] = None
         meta: 附加信息（触发原因、锦囊 id 等）
     """
     try:
-        _LOG_ROOT.mkdir(parents=True, exist_ok=True)
+        log_root = _log_root()
+        log_root.mkdir(parents=True, exist_ok=True)
         record = {
             "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z") or datetime.now().isoformat(),
             "type": push_type,
@@ -45,7 +53,7 @@ def append(message: str, push_type: str = "unknown", meta: Optional[dict] = None
         if meta:
             record["meta"] = meta
 
-        with _today_path().open("a", encoding="utf-8") as f:
+        with (log_root / _today_path().name).open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as e:
         # 永不影响主推送
@@ -74,7 +82,7 @@ def read_day(date_str: Optional[str] = None) -> list:
     """
     if not date_str:
         date_str = datetime.now().strftime("%Y-%m-%d")
-    path = _LOG_ROOT / f"push_{date_str}.jsonl"
+    path = _log_root() / f"push_{date_str}.jsonl"
     if not path.exists():
         return []
 

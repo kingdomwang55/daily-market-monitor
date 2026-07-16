@@ -8,15 +8,6 @@ from .config import get_config
 from .state import State
 from .feishu import send_text
 
-# 数据层（可选：失败不影响推送）
-try:
-    from ..data.database import get_session
-    from ..data.repositories import PushLogRepository, SignalEventRepository
-    _DB_AVAILABLE = True
-except Exception as _e:
-    print(f"[base] 数据层未就绪：{_e}", file=sys.stderr)
-    _DB_AVAILABLE = False
-
 
 class BaseMonitor(ABC):
     """所有监控继承此基类"""
@@ -56,8 +47,12 @@ class BaseMonitor(ABC):
     def _log_push(self, message: str, meta: Optional[dict],
                   sent_ok: bool) -> Optional[int]:
         """将推送写入 push_log 表，返回 push_log.id"""
-        if not _DB_AVAILABLE:
+        try:
+            from ..data.database import get_session
+            from ..data.repositories import PushLogRepository, SignalEventRepository
+        except Exception:
             return None
+
         try:
             m = meta or {}
             with get_session() as s:

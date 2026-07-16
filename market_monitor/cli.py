@@ -5,10 +5,23 @@ import sys
 from pathlib import Path
 
 from .monitors.registry import get_monitor, list_monitors, REGISTRY
+from .core.config import get_config
+
+
+CONFIG_KEY_ALIASES = {
+    "morning": "morning_report",
+    "evening": "evening_report",
+}
 
 
 def cmd_run(args):
     """运行单个 monitor"""
+    config_key = CONFIG_KEY_ALIASES.get(args.name, args.name)
+    cfg = get_config()
+    if not args.force and cfg.get(f"{config_key}.enabled", True) is False:
+        print(f"monitor 已禁用: {args.name}")
+        sys.exit(0)
+
     Cls = get_monitor(args.name)
     m = Cls(force=args.force, snapshot=args.snapshot)
     ok = m.run()
@@ -38,6 +51,15 @@ def cmd_status(args):
         print(f"错误: {e}", file=sys.stderr)
 
 
+def cmd_doctor(args):
+    """检查本机环境与项目可迁移性。"""
+    from .core.doctor import run_checks, format_checks, exit_code
+
+    checks = run_checks(ci=args.ci)
+    print(format_checks(checks))
+    sys.exit(exit_code(checks))
+
+
 def cmd_test_feishu(args):
     """测试飞书发送"""
     from .core.feishu import send_text
@@ -48,13 +70,24 @@ def cmd_test_feishu(args):
 
 def cmd_logs(args):
     """查看日志（按行 tail）"""
+    configured_log_dir = None
+    try:
+        configured_log_dir = Path(get_config().log_dir)
+    except Exception:
+        configured_log_dir = None
+
     log_paths = [
         Path(f"/tmp/{args.name}.log"),
         Path(f"/tmp/{args.name}.err"),
         Path(f"/tmp/{args.name}_alert.log"),
         Path(f"/tmp/{args.name}_alert.err"),
-        Path.home() / "projects" / "market-monitor" / "logs" / f"{args.name}.log",
     ]
+    if configured_log_dir is not None:
+        log_paths.extend([
+            configured_log_dir / f"{args.name}.log",
+            configured_log_dir / f"{args.name}.err",
+            configured_log_dir / f"push_{args.name}.jsonl",
+        ])
     found = False
     for p in log_paths:
         if not p.exists():
@@ -316,12 +349,12 @@ def cmd_decision_verify(args):
 def cmd_decision_review(args):
     """生成周报复盘"""
     from .core import decision_tracker as dt
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timedelta
 
     if args.week:
         start, end = dt.week_date_range()
     else:
-        start = args.start or (_dt.now() - _dt.timedelta(days=7)).strftime("%Y-%m-%d")
+        start = args.start or (_dt.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         end = args.end or _dt.now().strftime("%Y-%m-%d")
 
     report = dt.format_weekly_review(start, end)
@@ -765,6 +798,11 @@ def main():
     # status
     p_status = sub.add_parser("status", help="查看 launchd 任务")
     p_status.set_defaults(func=cmd_status)
+
+    # doctor
+    p_doctor = sub.add_parser("doctor", help="检查本机环境和项目可迁移性")
+    p_doctor.add_argument("--ci", action="store_true", help="CI 模式：不要求本机配置/凭据")
+    p_doctor.set_defaults(func=cmd_doctor)
 
     # test-feishu
     p_test = sub.add_parser("test-feishu", help="测试飞书发送")

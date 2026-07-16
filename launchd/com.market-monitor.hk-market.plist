@@ -6,18 +6,18 @@
     <string>com.market-monitor.hk-market</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/xiaosheji/projects/market-monitor/.venv/bin/python</string>
+        <string>/Users/yehlv/idea-project/daily-market-monitor/.venv/bin/python</string>
         <string>-m</string>
         <string>market_monitor.cli</string>
         <string>run</string>
         <string>hk_market</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/xiaosheji/projects/market-monitor</string>
+    <string>/Users/yehlv/idea-project/daily-market-monitor</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONPATH</key>
-        <string>/Users/xiaosheji/projects/market-monitor</string>
+        <string>/Users/yehlv/idea-project/daily-market-monitor</string>
     </dict>
     <key>StartCalendarInterval</key>
     <array>

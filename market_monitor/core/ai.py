@@ -41,8 +41,8 @@ def _call_model(url: str, api_key: str, model: str, prompt: str,
         return content
 
     # 推理模型 max_tokens 不够被截断在思考段：加大重试一次
-    if finish == "length" and reasoning and max_tokens < 4000:
-        boosted = max(min(max_tokens * 3, 4000), 1500)
+    if finish == "length" and reasoning and max_tokens < 6000:
+        boosted = max(min(max_tokens * 2, 6000), 3000)
         print(f"[ai] {model} 推理占满 max_tokens={max_tokens}，加大到 {boosted} 重试", file=sys.stderr)
         result2 = _post(boosted)
         content2 = (result2["choices"][0]["message"].get("content") or "").strip()
@@ -52,7 +52,7 @@ def _call_model(url: str, api_key: str, model: str, prompt: str,
     return None
 
 
-def ai_chat(prompt: str, temperature: float = 0.7, max_tokens: int = 1000,
+def ai_chat(prompt: str, temperature: float = 0.7, max_tokens: int = 2000,
             timeout: int = 60) -> Optional[str]:
     """调用 AI 生成回答。主模型失败自动 fallback 到备选模型；两者都失败返回 None。"""
     cfg = get_config()

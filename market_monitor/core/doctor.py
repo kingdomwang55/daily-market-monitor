@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import os
 import plistlib
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -74,10 +76,41 @@ def check_registry() -> DoctorCheck:
 
 
 def check_launchd_templates(root: Path = PROJECT_ROOT) -> DoctorCheck:
-    launchd_dir = Path(os.environ.get("MARKET_MONITOR_LAUNCHD_DIR", root / "launchd"))
+    override_dir = os.environ.get("MARKET_MONITOR_LAUNCHD_DIR")
+    launchd_dir = Path(override_dir or root / "launchd")
     plists = sorted(launchd_dir.glob("com.market-monitor.*.plist"))
     if not plists:
-        return _fail("launchd", f"no plist files found in {launchd_dir}")
+        if override_dir:
+            return _fail("launchd", f"no plist files found in {launchd_dir}")
+        return _check_generated_launchd_templates(root)
+
+    return _validate_launchd_plists(root, plists, generated=False)
+
+
+def _check_generated_launchd_templates(root: Path) -> DoctorCheck:
+    with tempfile.TemporaryDirectory() as tmp:
+        env = os.environ.copy()
+        env["MARKET_MONITOR_LAUNCHD_DIR"] = tmp
+        env.setdefault("MARKET_MONITOR_PYTHON", sys.executable)
+        result = subprocess.run(
+            [sys.executable, str(root / "scripts" / "gen_launchd.py")],
+            cwd=root,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return _fail("launchd", f"failed to generate plist templates: {result.stderr.strip()}")
+
+        plists = sorted(Path(tmp).glob("com.market-monitor.*.plist"))
+        if not plists:
+            return _fail("launchd", "generator produced no plist files")
+        return _validate_launchd_plists(root, plists, generated=True)
+
+
+def _validate_launchd_plists(root: Path, plists: list[Path], generated: bool) -> DoctorCheck:
+    launchd_dir = plists[0].parent
 
     stale_path_offenders = []
     for plist in plists:
@@ -94,6 +127,8 @@ def check_launchd_templates(root: Path = PROJECT_ROOT) -> DoctorCheck:
 
     if stale_path_offenders:
         return _fail("launchd", "stale project path in " + ", ".join(stale_path_offenders))
+    if generated:
+        return _ok("launchd", f"generated {len(plists)} plist files target {root}")
     return _ok("launchd", f"{len(plists)} plist files target {root}")
 
 

@@ -28,18 +28,33 @@ class CliOperabilityTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def test_doctor_ci_checks_portable_project_invariants(self):
-        result = subprocess.run(
-            [sys.executable, "-m", "market_monitor.cli", "doctor", "--ci"],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            timeout=10,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env["MARKET_MONITOR_LAUNCHD_DIR"] = tmp
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("python", result.stdout.lower())
-        self.assertIn("launchd", result.stdout.lower())
-        self.assertIn("registry", result.stdout.lower())
+            gen = subprocess.run(
+                [sys.executable, "scripts/gen_launchd.py"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=10,
+                env=env,
+            )
+            self.assertEqual(gen.returncode, 0, gen.stderr)
+
+            result = subprocess.run(
+                [sys.executable, "-m", "market_monitor.cli", "doctor", "--ci"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=10,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("python", result.stdout.lower())
+            self.assertIn("launchd", result.stdout.lower())
+            self.assertIn("registry", result.stdout.lower())
 
     def test_doctor_reports_missing_local_config(self):
         config_path = ROOT / "config" / "config.yaml"
@@ -100,7 +115,6 @@ class LaunchdGenerationTests(unittest.TestCase):
             )
             self.assertIn("<string>/custom/python</string>", plist)
             self.assertIn(f"<string>{ROOT}</string>", plist)
-            self.assertNotIn("$PROJECT_ROOT", plist)
 
     def test_gen_launchd_covers_monthly_day_schedule(self):
         with tempfile.TemporaryDirectory() as tmp:

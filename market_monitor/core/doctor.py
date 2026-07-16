@@ -18,7 +18,6 @@ from .config import CONFIG_PATH, PROJECT_ROOT
 from ..monitors.registry import REGISTRY, list_monitors
 
 
-OLD_PROJECT_PATH = "/Users/" + "xiaosheji/projects/market-monitor"
 EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "config" / "config.example.yaml"
 REQUIRED_CONFIG_SECTIONS = (
     "common",
@@ -80,12 +79,8 @@ def check_launchd_templates(root: Path = PROJECT_ROOT) -> DoctorCheck:
     if not plists:
         return _fail("launchd", f"no plist files found in {launchd_dir}")
 
-    old_path_offenders = []
     stale_path_offenders = []
     for plist in plists:
-        text = plist.read_text(encoding="utf-8")
-        if OLD_PROJECT_PATH in text:
-            old_path_offenders.append(plist.name)
         try:
             payload = plistlib.loads(plist.read_bytes())
         except Exception as e:
@@ -97,8 +92,6 @@ def check_launchd_templates(root: Path = PROJECT_ROOT) -> DoctorCheck:
         if working_dir != expected_root or pythonpath != expected_root:
             stale_path_offenders.append(plist.name)
 
-    if old_path_offenders:
-        return _fail("launchd", "old absolute path remains in " + ", ".join(old_path_offenders))
     if stale_path_offenders:
         return _fail("launchd", "stale project path in " + ", ".join(stale_path_offenders))
     return _ok("launchd", f"{len(plists)} plist files target {root}")

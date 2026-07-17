@@ -167,6 +167,59 @@ def test_break_stop_3700_triggers(monitor):
     assert "break_stop_3700" in [s["key"] for s in signals]
 
 
+
+# --------------------------------------------------------
+# ⑧ 放量破位 3800（2026-07-17 实盘盲区修复）
+# --------------------------------------------------------
+def test_volume_break_3800_triggers(monitor):
+    """2026-07-17 实盘：close=3764 pct=-3.05% vol=650亿手 (20日均~580) 应触发"""
+    kline = _build_base_kline(days=260, start_close=3900.0, vol_bh=580.0)
+    # 前一日收 3882，量 535 亿手（对齐真实数据）
+    kline[-2] = _mk_kline_entry(
+        "P", o=3912, h=3940, l=3867, c=3882, v=535 * 1e8,
+    )
+    # 今日：开 3865，跌到 3745，收 3764，量 650 亿手 → pct=-3.04%
+    kline[-1] = _mk_kline_entry(
+        "T", o=3865, h=3869, l=3745, c=3764, v=650 * 1e8,
+    )
+    metrics = monitor._build_metrics(kline)
+    signals = monitor._check_signals(metrics)
+    keys = [s["key"] for s in signals]
+    assert "volume_break_3800" in keys, (
+        f"got {keys} pct={metrics['pct']:.2f}% vol={metrics['volume_bh']:.0f} "
+        f"vol_ma={metrics['vol_ma20_prev']:.0f}"
+    )
+
+
+def test_volume_break_3800_no_trigger_when_shrink(monitor):
+    """收盘破 3800 但缩量 → 走 ⑤ 缩量破位，不走 ⑧ 放量破位"""
+    kline = _build_base_kline(days=260, start_close=3900.0, vol_bh=580.0)
+    kline[-1] = _mk_kline_entry(
+        "T", o=3850, h=3860, l=3760, c=3780, v=350 * 1e8,  # 缩量
+    )
+    metrics = monitor._build_metrics(kline)
+    signals = monitor._check_signals(metrics)
+    keys = [s["key"] for s in signals]
+    assert "volume_break_3800" not in keys
+    assert "shrink_break_3800" in keys, f"got {keys}"
+
+
+def test_volume_break_3800_no_trigger_when_small_drop(monitor):
+    """放量但跌幅只有 -1% → 不达标"""
+    kline = _build_base_kline(days=260, start_close=3900.0, vol_bh=580.0)
+    kline[-2] = _mk_kline_entry(
+        "P", o=3820, h=3830, l=3800, c=3810, v=580 * 1e8,
+    )
+    # 今日：收 3777（跌幅仅 -0.87%），放量 800 亿手
+    kline[-1] = _mk_kline_entry(
+        "T", o=3805, h=3810, l=3770, c=3777, v=800 * 1e8,
+    )
+    metrics = monitor._build_metrics(kline)
+    signals = monitor._check_signals(metrics)
+    keys = [s["key"] for s in signals]
+    assert "volume_break_3800" not in keys, f"got {keys} pct={metrics['pct']:.2f}%"
+
+
 # --------------------------------------------------------
 # 无触发（当前市场状态）
 # --------------------------------------------------------

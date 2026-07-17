@@ -34,6 +34,16 @@
 ⑥ 逼近止损 3700：
    - 收盘 ≤ 3730（±1%）
    - → 提前预警
+
+⑦ 跌破止损 3700：
+   - 收盘 < 3700
+   - → 无条件清仓
+
+⑧ 放量破位 3800（2026-07-17 实盘盲区修复）：
+   - 收盘 < 3800
+   - 成交量 > 20 日均量 × 1.10（放量 ≥ 10%）
+   - 单日跌幅 < -2.5%
+   - → 恐慌盘出货，筑底三段式第一段，不入场但盯紧缩量确认
 """
 from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
@@ -59,6 +69,11 @@ LONG_HAMMER_LOW_MAX = 3820  # 长下影线的低点上限
 LONG_HAMMER_SHADOW_BODY_RATIO = 2.0
 NEAR_STOP_BAND = 30  # 距止损 30 点内预警
 MA250_REJECT_TOL = 0.005  # MA250 反抽 ±0.5%
+
+# ⑧ 放量破位 3800
+VOL_BREAK_RATIO = 1.10  # 相对 20 日均量放大 10%（市场共识阈值）
+VOL_BREAK_DAY_RATIO = 1.15  # 相对昨日量放大 15%（环比口径）
+VOL_BREAK_PCT = -2.5    # 单日跌幅阈值
 
 
 class ShanghaiWatchMonitor(BaseMonitor):
@@ -141,6 +156,7 @@ class ShanghaiWatchMonitor(BaseMonitor):
         # 前一日
         prev = kline[-2] if len(kline) >= 2 else None
         prev_close = float(prev["close"]) if prev else None
+        prev_vol_bh = self._to_billion_hand(prev["volume"]) if prev else None
         pct = (latest_close - prev_close) / prev_close * 100 if prev_close else 0
 
         body = abs(latest_close - latest_open)
@@ -154,6 +170,7 @@ class ShanghaiWatchMonitor(BaseMonitor):
             "high": latest_high,
             "low": latest_low,
             "prev_close": prev_close,
+            "prev_vol_bh": prev_vol_bh,
             "pct": pct,
             "volume_bh": latest_vol_bh,
             "vol_ma20_prev": vol_ma20_prev,
@@ -280,6 +297,28 @@ class ShanghaiWatchMonitor(BaseMonitor):
                 "title": "🚨 跌破止损 3700",
                 "detail": f"收 {c:.2f} < 3700，已下破 3 月低点缺口下沿",
                 "action": "半仓者无条件清仓，等磨底完成再看",
+            })
+
+        # ⑧ 放量破位 3800（2026-07-17 实盘盲区修复）
+        prev_vol = m.get("prev_vol_bh") or 0
+        vol_vs_ma = (vol > vol_ma * VOL_BREAK_RATIO) if vol_ma else False
+        vol_vs_prev = (vol > prev_vol * VOL_BREAK_DAY_RATIO) if prev_vol else False
+        if (c < KEY_LEVEL
+                and (vol_vs_ma or vol_vs_prev)
+                and pct < VOL_BREAK_PCT):
+            vol_desc = (
+                f"20日均 {vol_ma:.0f}×{VOL_BREAK_RATIO}" if vol_vs_ma
+                else f"昨日 {prev_vol:.0f}×{VOL_BREAK_DAY_RATIO}"
+            )
+            signals.append({
+                "key": "volume_break_3800",
+                "level": 3,
+                "title": "🚨 放量破位 3800（恐慌盘出货）",
+                "detail": (
+                    f"收 {c:.2f} < 3800，量 {vol:.0f}亿手 > {vol_desc}，"
+                    f"跌幅 {pct:+.2f}%"
+                ),
+                "action": "不入场；筑底三段式第一段（放量破位→缩量阴跌→无量筑底），等 2-5 日缩量确认",
             })
 
         return signals
@@ -414,6 +453,8 @@ class ShanghaiWatchMonitor(BaseMonitor):
             return "shanghai_near_stop_3700", -1
         if key == "break_stop_3700":
             return "shanghai_break_stop_3700", -1
+        if key == "volume_break_3800":
+            return "shanghai_volume_break_3800", -1
         return "shanghai_near_stop_3700", 0
 
     def _print_snapshot(self, m: Dict) -> None:

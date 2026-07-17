@@ -62,11 +62,28 @@ class Config:
 
     @property
     def ai_model(self):
-        return self.get("ai.model", "deepseek-v4-pro")
+        return self.get("ai.model", "deepseek-v4-flash")
+
+    @property
+    def ai_fallback_models(self):
+        """Fallback 模型链，按顺序尝试。
+
+        兼容旧字段 `ai.fallback_model`（单个字符串）：会被自动转成单元素列表。
+        新字段 `ai.fallback_models`（列表）优先。
+        """
+        v = self.get("ai.fallback_models")
+        if isinstance(v, list) and v:
+            return [str(x) for x in v if x]
+        legacy = self.get("ai.fallback_model")
+        if legacy:
+            return [str(legacy)]
+        return ["deepseek-v4-pro", "glm-latest"]
 
     @property
     def ai_fallback_model(self):
-        return self.get("ai.fallback_model", "glm-latest")
+        """向后兼容：返回 fallback 链的第一个。"""
+        chain = self.ai_fallback_models
+        return chain[0] if chain else None
 
     # ==== 通用 ====
     @property

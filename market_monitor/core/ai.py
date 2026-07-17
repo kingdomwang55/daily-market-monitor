@@ -59,7 +59,7 @@ def ai_chat(prompt: str, temperature: float = 0.7, max_tokens: int = 2000,
     base_url = cfg.ai_base_url
     api_key = cfg.ai_api_key
     primary = cfg.ai_model
-    fallback = cfg.ai_fallback_model
+    fallbacks = cfg.ai_fallback_models or []
 
     if not (base_url and api_key):
         print("[ai] 缺少 AI 凭据", file=sys.stderr)
@@ -71,10 +71,11 @@ def ai_chat(prompt: str, temperature: float = 0.7, max_tokens: int = 2000,
     else:
         url = base_url.rstrip("/") + "/chat/completions"
 
-    # 主模型 -> fallback，去重且保序
+    # 主模型 -> fallback 链，去重且保序
     candidates = [primary]
-    if fallback and fallback != primary:
-        candidates.append(fallback)
+    for m in fallbacks:
+        if m and m not in candidates:
+            candidates.append(m)
 
     for idx, model in enumerate(candidates):
         try:

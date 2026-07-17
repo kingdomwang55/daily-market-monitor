@@ -10,6 +10,8 @@ from datetime import time as dt_time
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
 from ..core.teaching import hk_shock_teaching
+from ..signals import Signal
+from ..signals.persist import persist_signals
 
 
 class HkShockMonitor(BaseMonitor):
@@ -75,7 +77,7 @@ class HkShockMonitor(BaseMonitor):
             if i < len(lines):
                 info = ds.parse_index_simple(lines[i])
                 if info:
-                    result.append((item["name"], info))
+                    result.append((item["code"], item["name"], info))
         return result
 
     def _classify_linkage(self, hk_avg: float, a_avg: float,
@@ -127,7 +129,7 @@ class HkShockMonitor(BaseMonitor):
             if i < len(lines):
                 info = ds.parse_hk_index(lines[i])
                 if info:
-                    indices.append((item["name"], item.get("type", "broad"), info))
+                    indices.append((item["code"], item["name"], item.get("type", "broad"), info))
 
         stocks = []
         for i, item in enumerate(stocks_cfg):
@@ -135,7 +137,7 @@ class HkShockMonitor(BaseMonitor):
             if idx < len(lines):
                 info = ds.parse_hk_stock(lines[idx])
                 if info:
-                    stocks.append((item["name"], info))
+                    stocks.append((item["code"], item["name"], info))
 
         if not indices:
             self.log("无港股指数数据")
@@ -143,8 +145,9 @@ class HkShockMonitor(BaseMonitor):
 
         # ─── 2. 分级判定 ───
         index_alerts = []
+        index_breaks = []
         max_level = 0
-        for name, itype, info in indices:
+        for code, name, itype, info in indices:
             th = th_tech if itype == "tech" else th_index
             lvl = self._level_of(info["pct"], th)
             if lvl > 0:
@@ -154,11 +157,21 @@ class HkShockMonitor(BaseMonitor):
                         f"{self._level_emoji(lvl, info['pct'])} {name} "
                         f"{info['close']:.2f} {info['pct']:+.2f}%"
                     )
+                    index_breaks.append({
+                        "code": code,
+                        "name": name,
+                        "type": itype,
+                        "level": lvl,
+                        "pct": info["pct"],
+                        "close": info["close"],
+                        "direction": "up" if info["pct"] > 0 else "down",
+                    })
                     self.state.set(key)
                     max_level = max(max_level, lvl)
 
         stock_alerts = []
-        for name, info in stocks:
+        stock_breaks = []
+        for code, name, info in stocks:
             lvl = self._level_of(info["pct"], th_stock)
             if lvl > 0:
                 key = f"stock_{name}_{self.today}_L{lvl}"
@@ -167,6 +180,14 @@ class HkShockMonitor(BaseMonitor):
                         f"{self._level_emoji(lvl, info['pct'])} {name} "
                         f"HK${info['close']:.2f} {info['pct']:+.2f}%"
                     )
+                    stock_breaks.append({
+                        "code": code,
+                        "name": name,
+                        "level": lvl,
+                        "pct": info["pct"],
+                        "close": info["close"],
+                        "direction": "up" if info["pct"] > 0 else "down",
+                    })
                     self.state.set(key)
                     max_level = max(max_level, lvl)
 
@@ -179,11 +200,11 @@ class HkShockMonitor(BaseMonitor):
         a_ref = self._fetch_a_share_ref(a_ref_cfg) if a_ref_cfg else []
 
         hk_avg = (
-            sum(info["pct"] for _, _, info in indices) / len(indices)
+            sum(info["pct"] for _, _, _, info in indices) / len(indices)
             if indices else 0
         )
         a_avg = (
-            sum(info["pct"] for _, info in a_ref) / len(a_ref)
+            sum(info["pct"] for _, _, info in a_ref) / len(a_ref)
             if a_ref else 0
         )
 
@@ -210,7 +231,7 @@ class HkShockMonitor(BaseMonitor):
 
         # 港股全景状态（所有指数 + 所有港股通标的，无论是否异动）
         parts.append("\n🇭🇰 港股指数:")
-        for name, itype, info in indices:
+        for _, name, itype, info in indices:
             tag = " (科技)" if itype == "tech" else ""
             parts.append(
                 f"{self.emoji_by_pct(info['pct'])} {name}{tag}: "
@@ -219,7 +240,7 @@ class HkShockMonitor(BaseMonitor):
 
         if stocks:
             parts.append("\n💼 港股通热门:")
-            for name, info in stocks:
+            for _, name, info in stocks:
                 parts.append(
                     f"{self.emoji_by_pct(info['pct'])} {name} "
                     f"HK${info['close']:.2f} {info['pct']:+.2f}%"
@@ -234,7 +255,7 @@ class HkShockMonitor(BaseMonitor):
                 "pre": "🕐 未开盘",
             }.get(a_stage, "")
             parts.append(f"\n📊 A 股参考 [{stage_label}]:")
-            for name, info in a_ref:
+            for _, name, info in a_ref:
                 parts.append(
                     f"{self.emoji_by_pct(info['pct'])} {name}: "
                     f"{info['close']:.2f} {info['pct']:+.2f}%"
@@ -257,7 +278,6 @@ class HkShockMonitor(BaseMonitor):
         meta = {
             "scenario": scenario,
             "max_level": max_level,
-            "signal_type": f"hk_{scenario}",
             "hk_avg_pct": round(hk_avg, 3),
             "a_avg_pct": round(a_avg, 3),
             "a_stage": a_stage,
@@ -265,22 +285,111 @@ class HkShockMonitor(BaseMonitor):
             "stock_alerts_count": len(stock_alerts),
             "metrics": {
                 "hk_indices": [
-                    {"name": n, "pct": info["pct"], "close": info["close"], "type": t}
-                    for n, t, info in indices
+                    {"code": c, "name": n, "pct": info["pct"], "close": info["close"], "type": t}
+                    for c, n, t, info in indices
                 ],
                 "hk_stocks": [
-                    {"name": n, "pct": info["pct"], "close": info["close"]}
-                    for n, info in stocks
+                    {"code": c, "name": n, "pct": info["pct"], "close": info["close"]}
+                    for c, n, info in stocks
                 ],
                 "a_ref": [
-                    {"name": n, "pct": info["pct"], "close": info["close"]}
-                    for n, info in a_ref
+                    {"code": c, "name": n, "pct": info["pct"], "close": info["close"]}
+                    for c, n, info in a_ref
                 ],
+                "index_breaks": index_breaks,
+                "stock_breaks": stock_breaks,
             },
         }
         if self.send(message, meta=meta):
+            self._persist_hk_signals(
+                scenario=scenario,
+                hk_avg=hk_avg,
+                a_avg=a_avg,
+                a_stage=a_stage,
+                index_breaks=index_breaks,
+                stock_breaks=stock_breaks,
+                push_log_id=self.last_push_log_id,
+            )
             self.log(f"✅ 已发送 {self.now_str} scenario={scenario}")
             self.state.save()
             return True
         self.log("❌ 发送失败")
         return False
+
+    def _persist_hk_signals(
+        self,
+        *,
+        scenario: str,
+        hk_avg: float,
+        a_avg: float,
+        a_stage: str,
+        index_breaks: list[dict],
+        stock_breaks: list[dict],
+        push_log_id=None,
+    ) -> None:
+        """Persist each HK alert with the cross-market scenario attached."""
+        signal_type = f"hk_{scenario}"
+        scenario_direction = 1 if hk_avg > 0 else (-1 if hk_avg < 0 else 0)
+        signals = []
+
+        for item in index_breaks:
+            item_direction = 1 if item["direction"] == "up" else -1
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type=signal_type,
+                title=f"{item['name']} 港股指数异动",
+                symbol=item["code"],
+                symbols=[item["code"]],
+                direction=item_direction or scenario_direction,
+                level=item["level"],
+                metrics={
+                    "name": item["name"],
+                    "type": item["type"],
+                    "pct": item["pct"],
+                    "close": item["close"],
+                    "trigger": "hk_index_move",
+                    "scenario": scenario,
+                    "hk_avg_pct": round(hk_avg, 3),
+                    "a_avg_pct": round(a_avg, 3),
+                    "a_stage": a_stage,
+                },
+                dedup_key=f"{item['name']}_{self.today}_L{item['level']}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        for item in stock_breaks:
+            item_direction = 1 if item["direction"] == "up" else -1
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type=signal_type,
+                title=f"{item['name']} 港股个股异动",
+                symbol=item["code"],
+                symbols=[item["code"]],
+                direction=item_direction or scenario_direction,
+                level=item["level"],
+                metrics={
+                    "name": item["name"],
+                    "pct": item["pct"],
+                    "close": item["close"],
+                    "trigger": "hk_stock_move",
+                    "scenario": scenario,
+                    "hk_avg_pct": round(hk_avg, 3),
+                    "a_avg_pct": round(a_avg, 3),
+                    "a_stage": a_stage,
+                },
+                dedup_key=f"stock_{item['name']}_{self.today}_L{item['level']}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        if not signals:
+            return
+        try:
+            from ..data import get_session
+            with get_session() as s:
+                persist_signals(s, signals)
+        except Exception as e:
+            self.log(f"结构化信号落库失败（不影响推送）: {e}")

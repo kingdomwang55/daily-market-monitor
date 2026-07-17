@@ -1,5 +1,6 @@
 """命令行入口"""
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -777,6 +778,105 @@ def cmd_screen(args):
         print("\n✅ 已推送飞书")
 
 
+def _print_json(payload) -> None:
+    print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+
+def cmd_signal_types(args):
+    """列出已知 signal_type。"""
+    from .data import get_session
+    from .signals.query import list_signal_types
+
+    with get_session() as s:
+        rows = list_signal_types(s, monitor=args.monitor)
+
+    if args.json:
+        _print_json(rows)
+        return
+
+    if not rows:
+        print("💭 没有 signal type")
+        return
+    print(f"{'Signal Type':<26} {'Monitor':<14} {'Dir':>4}  Display")
+    print("-" * 72)
+    for r in rows:
+        direction = r.get("direction")
+        print(
+            f"{r['signal_type']:<26} {r['monitor']:<14} "
+            f"{str(direction if direction is not None else '-'):>4}  "
+            f"{r.get('display_name') or ''}"
+        )
+
+
+def cmd_signal_list(args):
+    """列出 signal_event。"""
+    from .data import get_session
+    from .signals.query import list_signals
+
+    with get_session() as s:
+        rows = list_signals(
+            s,
+            monitor=args.monitor,
+            signal_type=args.type,
+            days=args.days,
+            min_level=args.level,
+            limit=args.limit,
+        )
+
+    if args.json:
+        _print_json(rows)
+        return
+
+    if not rows:
+        print("💭 没有符合条件的信号")
+        return
+    print(f"📋 共 {len(rows)} 条信号:\n")
+    for r in rows:
+        lvl = r.get("level")
+        lvl_text = f"L{lvl}" if lvl is not None else "L-"
+        symbol = f" {r['symbol']}" if r.get("symbol") else ""
+        pushed = " pushed" if r.get("push_log_id") else ""
+        print(
+            f"  #{r['id']:<5} {lvl_text:<3} {r['ts'][:16]} "
+            f"{r['monitor']} {r['signal_type']}{symbol}{pushed}"
+        )
+        title = r.get("title")
+        if title and title != r.get("signal_type"):
+            print(f"        {title}")
+
+
+def cmd_signal_show(args):
+    """查看单条 signal_event。"""
+    from .data import get_session
+    from .signals.query import get_signal
+
+    with get_session() as s:
+        row = get_signal(s, args.id)
+
+    if row is None:
+        print(f"❌ 未找到 signal #{args.id}")
+        sys.exit(1)
+
+    if args.json:
+        _print_json(row)
+        return
+
+    print(f"📋 Signal #{row['id']}")
+    print(f"  Time       : {row['ts']}")
+    print(f"  Trade date : {row['trade_date']}")
+    print(f"  Monitor    : {row['monitor']}")
+    print(f"  Type       : {row['signal_type']}")
+    print(f"  Symbol     : {row.get('symbol') or '-'}")
+    print(f"  Level      : {row.get('level') if row.get('level') is not None else '-'}")
+    print(f"  Status     : {row['status']}")
+    if row.get("push_log_id"):
+        print(f"  Push log   : #{row['push_log_id']}")
+    metrics = row.get("metrics") or {}
+    if metrics:
+        print("\nMetrics:")
+        print(json.dumps(metrics, ensure_ascii=False, indent=2, default=str))
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -957,6 +1057,29 @@ def main():
     p_screen.add_argument("--top", type=int, help="只输出前 N 条")
     p_screen.add_argument("--send", action="store_true", help="同时推送到飞书")
     p_screen.set_defaults(func=cmd_screen)
+
+    # signal（Phase 1：结构化信号读侧）
+    p_signal = sub.add_parser("signal", help="结构化信号查询")
+    sig_sub = p_signal.add_subparsers(dest="action", required=True)
+
+    p_sig_types = sig_sub.add_parser("types", help="列出 signal_type")
+    p_sig_types.add_argument("--monitor", help="按 monitor 过滤")
+    p_sig_types.add_argument("--json", action="store_true", help="输出 JSON")
+    p_sig_types.set_defaults(func=cmd_signal_types)
+
+    p_sig_list = sig_sub.add_parser("list", help="列出 signal_event")
+    p_sig_list.add_argument("--monitor", help="按 monitor 过滤")
+    p_sig_list.add_argument("--type", help="按 signal_type 过滤")
+    p_sig_list.add_argument("--days", type=int, default=7, help="最近多少天（默认 7）")
+    p_sig_list.add_argument("--level", type=int, default=0, help="最低 level（默认 0）")
+    p_sig_list.add_argument("--limit", type=int, default=50, help="最多多少条（默认 50）")
+    p_sig_list.add_argument("--json", action="store_true", help="输出 JSON")
+    p_sig_list.set_defaults(func=cmd_signal_list)
+
+    p_sig_show = sig_sub.add_parser("show", help="查看单条 signal_event")
+    p_sig_show.add_argument("id", type=int, help="signal_event id")
+    p_sig_show.add_argument("--json", action="store_true", help="输出 JSON")
+    p_sig_show.set_defaults(func=cmd_signal_show)
 
     args = parser.parse_args()
     args.func(args)

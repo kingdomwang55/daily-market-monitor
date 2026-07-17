@@ -23,6 +23,7 @@ class BaseMonitor(ABC):
         self.force = force
         self.snapshot = snapshot
         self.now = datetime.now()
+        self.last_push_log_id = None
 
     @property
     def now_str(self) -> str:
@@ -38,7 +39,7 @@ class BaseMonitor(ABC):
     def send(self, message: str, meta: Optional[dict] = None) -> bool:
         ok = send_text(message, push_type=self.name, meta=meta)
         # 新增：推送自动落库（Phase 1 核心）
-        self._log_push(message, meta, ok)
+        self.last_push_log_id = self._log_push(message, meta, ok)
         return ok
 
     # ==================================================

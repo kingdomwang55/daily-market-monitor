@@ -3,6 +3,8 @@ from ..core.base import BaseMonitor
 from ..core import data_source as ds
 from ..core.teaching import price_alert_teaching
 from ..core.gold_price import format_gold, fetch_comex_gold, fetch_usdcnh, cny_g_to_usd_oz
+from ..signals import Signal
+from ..signals.persist import persist_signals
 
 
 class PriceAlertMonitor(BaseMonitor):
@@ -138,14 +140,60 @@ class PriceAlertMonitor(BaseMonitor):
         meta = {
             "scenario": signal_type,
             "max_level": max_level,
-            "signal_type": signal_type,
             "breaks_count": len(breaks),
             "metrics": {
                 "breaks": breaks,
             },
         }
         if self.send(message, meta=meta):
+            if breaks:
+                self._persist_break_signals(breaks, push_log_id=self.last_push_log_id)
             self.log(f"✅ 已发送 {self.now_str} type={signal_type} breaks={len(breaks)}")
             self.state.save()
             return True
         return False
+
+    def _persist_break_signals(self, breaks: list[dict], push_log_id=None) -> None:
+        """Persist each triggered threshold as a first-class Signal."""
+        signals = []
+        for item in breaks:
+            direction = item["direction"]
+            if direction == "stop_break":
+                signal_type = "price_stop_break"
+                direction_value = -1
+                title = f"{item['name']} 跌破止损位"
+            elif direction == "add_break":
+                signal_type = "price_add_break"
+                direction_value = 1
+                title = f"{item['name']} 突破加仓位"
+            else:
+                signal_type = "price_mixed_break"
+                direction_value = 0
+                title = f"{item['name']} 触发关键点位"
+
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type=signal_type,
+                title=title,
+                symbol=item["code"],
+                symbols=[item["code"]],
+                direction=direction_value,
+                level=2,
+                metrics={
+                    "name": item["name"],
+                    "trigger": direction,
+                    "price": item["price"],
+                    "threshold": item["threshold"],
+                },
+                dedup_key=f"{direction}_{item['code']}_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        try:
+            from ..data import get_session
+            with get_session() as s:
+                persist_signals(s, signals)
+        except Exception as e:
+            self.log(f"结构化信号落库失败（不影响推送）: {e}")

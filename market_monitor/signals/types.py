@@ -66,8 +66,10 @@ def signal_event_to_dict(row) -> dict[str, Any]:
                 symbols.append(symbol)
 
     title = None
+    direction = None
     if isinstance(metrics, dict):
         title = metrics.get("title") or metrics.get("summary")
+        direction = metrics.get("direction")
 
     return {
         "id": row.id,
@@ -77,7 +79,7 @@ def signal_event_to_dict(row) -> dict[str, Any]:
         "signal_type": row.signal_type,
         "symbol": row.symbol,
         "symbols": symbols,
-        "direction": None,
+        "direction": direction,
         "level": row.level,
         "title": title or row.signal_type,
         "status": "pushed" if row.push_log_id else "detected",

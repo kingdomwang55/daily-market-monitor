@@ -18,6 +18,7 @@ def persist_signals(session, signals: Iterable[Signal]):
             metrics.setdefault("title", signal.title)
         if signal.summary:
             metrics.setdefault("summary", signal.summary)
+        metrics["direction"] = signal.direction
         if signal.symbols:
             metrics.setdefault("symbols", signal.symbols)
         if signal.evidence:

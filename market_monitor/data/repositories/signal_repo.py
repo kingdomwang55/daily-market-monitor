@@ -57,6 +57,7 @@ class SignalEventRepository:
         *,
         monitor: Optional[str] = None,
         signal_type: Optional[str] = None,
+        push_log_id: Optional[int] = None,
         days: Optional[int] = None,
         min_level: int = 0,
         limit: int = 50,
@@ -66,6 +67,8 @@ class SignalEventRepository:
             q = q.where(SignalEvent.monitor == monitor)
         if signal_type:
             q = q.where(SignalEvent.signal_type == signal_type)
+        if push_log_id is not None:
+            q = q.where(SignalEvent.push_log_id == push_log_id)
         if min_level:
             q = q.where(SignalEvent.level >= min_level)
         if days:

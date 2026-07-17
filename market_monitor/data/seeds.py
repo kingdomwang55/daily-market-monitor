@@ -37,6 +37,7 @@ MONITORS = [
     ("monthly",     "月度复盘",             "report",   "月末复盘"),
     ("midday",      "午间综述",             "periodic", "工作日 12:15 半日综述"),
     ("pulse",       "盘中脉搏",             "periodic", "工作日 10:30 / 14:00 条件优先"),
+    ("shanghai_watch", "上证 3800 剧本",    "alert",    "上证 3800 剧本触发条件监控"),
 ]
 
 
@@ -47,6 +48,7 @@ MONITORS = [
 SYMBOLS = [
     # (symbol, display, market, asset_class, currency, source)
     # A 股指数
+    ("sh000001",   "上证指数",   "CN", "index", "CNY", "sina"),
     ("s_sh000001", "上证指数",   "CN", "index", "CNY", "sina"),
     ("s_sz399006", "创业板指",   "CN", "index", "CNY", "sina"),
     ("s_sh000300", "沪深300",    "CN", "index", "CNY", "sina"),
@@ -120,6 +122,15 @@ SIGNAL_TYPES = [
     ("pulse_defensive",     "pulse", "避险资产异动",     0, "黏金/红利 ≥ ±1%"),
     ("pulse_other",         "pulse", "其他信号",         0, "其他触发条件"),
     ("pulse_heartbeat",     "pulse", "平淡心跳",         0, "无信号，一行心跳"),
+
+    # shanghai_watch ────────────────────
+    ("shanghai_v_reversal",       "shanghai_watch", "上证 V 型收回",       1, "3800 区 V 型收回"),
+    ("shanghai_hammer_at_3800",   "shanghai_watch", "3800 放量长下影",     1, "3800 区放量长下影"),
+    ("shanghai_ma250_hold",       "shanghai_watch", "连续站上 MA250",      1, "连续站上 MA250"),
+    ("shanghai_ma250_reject",     "shanghai_watch", "MA250 反抽被拒",     -1, "MA250 附近反抽被拒"),
+    ("shanghai_shrink_break_3800", "shanghai_watch", "缩量破位 3800",     -1, "缩量跌破 3800"),
+    ("shanghai_near_stop_3700",   "shanghai_watch", "逼近止损 3700",     -1, "逼近 3700 止损位"),
+    ("shanghai_break_stop_3700",  "shanghai_watch", "跌破止损 3700",     -1, "跌破 3700 止损位"),
 ]
 
 

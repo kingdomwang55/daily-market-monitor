@@ -40,6 +40,8 @@ from typing import Dict, List, Optional, Tuple
 
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
+from ..signals import Signal
+from ..signals.persist import persist_signals
 
 
 # ==========================================================
@@ -337,7 +339,6 @@ class ShanghaiWatchMonitor(BaseMonitor):
         message = "\n".join(lines)
         meta = {
             "scenario": "shanghai_watch",
-            "signal_type": ",".join(s["key"] for _, s in new_signals),
             "symbol": SH_SYMBOL,
             "max_level": max_level,
             "metrics": {
@@ -349,9 +350,71 @@ class ShanghaiWatchMonitor(BaseMonitor):
         }
         ok = self.send(message, meta=meta)
         if ok:
+            self._persist_watch_signals(m, [s for _, s in new_signals], push_log_id=self.last_push_log_id)
             for state_key, _ in new_signals:
                 self.state.set(state_key)
         return ok
+
+    def _persist_watch_signals(self, metrics: Dict, signals: List[Dict], push_log_id=None) -> None:
+        """Persist each Shanghai-watch trigger as a first-class Signal."""
+        rows = []
+        for s in signals:
+            signal_type, direction = self._signal_type_for_key(s["key"])
+            rows.append(Signal(
+                monitor=self.name,
+                signal_type=signal_type,
+                title=s["title"],
+                symbol=SH_SYMBOL,
+                symbols=[SH_SYMBOL],
+                direction=direction,
+                level=s["level"],
+                summary=s["detail"],
+                metrics={
+                    "key": s["key"],
+                    "detail": s["detail"],
+                    "action": s["action"],
+                    "close": metrics["close"],
+                    "pct": metrics["pct"],
+                    "low": metrics["low"],
+                    "high": metrics["high"],
+                    "volume_bh": metrics["volume_bh"],
+                    "vol_ma20_prev": metrics["vol_ma20_prev"],
+                    "ma250": metrics["ma250"],
+                    "ma250_hold_days": metrics["ma250_hold_days"],
+                    "trigger": s["key"],
+                },
+                dedup_key=f"{s['key']}_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        if not rows:
+            return
+        try:
+            from ..data import get_session
+            with get_session() as session:
+                persist_signals(session, rows)
+        except Exception as e:
+            self.log(f"结构化信号落库失败（不影响推送）: {e}")
+
+    @staticmethod
+    def _signal_type_for_key(key: str) -> tuple[str, int]:
+        if key == "v_reversal":
+            return "shanghai_v_reversal", 1
+        if key == "hammer_at_3800":
+            return "shanghai_hammer_at_3800", 1
+        if key.startswith("ma250_hold_"):
+            return "shanghai_ma250_hold", 1
+        if key == "ma250_reject":
+            return "shanghai_ma250_reject", -1
+        if key == "shrink_break_3800":
+            return "shanghai_shrink_break_3800", -1
+        if key == "near_stop_3700":
+            return "shanghai_near_stop_3700", -1
+        if key == "break_stop_3700":
+            return "shanghai_break_stop_3700", -1
+        return "shanghai_near_stop_3700", 0
 
     def _print_snapshot(self, m: Dict) -> None:
         print(f"[shanghai_watch] {self.now_str} 无触发信号")

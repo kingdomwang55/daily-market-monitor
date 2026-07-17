@@ -142,6 +142,14 @@ market-monitor db query --days 7 --level 1
 market-monitor db stats --days 30
 ```
 
+结构化信号：
+
+```bash
+market-monitor signal types --json
+market-monitor signal list --days 7 --json
+market-monitor signal show <id> --json
+```
+
 纸面交易：
 
 ```bash

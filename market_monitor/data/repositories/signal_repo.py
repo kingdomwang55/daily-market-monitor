@@ -2,9 +2,10 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..models import SignalEvent
+from ..models import SignalEvent, SignalTypeRegistry
 
 
 SHANGHAI = timezone(timedelta(hours=8))
@@ -47,3 +48,35 @@ class SignalEventRepository:
         self.s.add(row)
         self.s.flush()
         return row
+
+    def by_id(self, signal_id: int) -> Optional[SignalEvent]:
+        return self.s.get(SignalEvent, signal_id)
+
+    def recent(
+        self,
+        *,
+        monitor: Optional[str] = None,
+        signal_type: Optional[str] = None,
+        days: Optional[int] = None,
+        min_level: int = 0,
+        limit: int = 50,
+    ):
+        q = select(SignalEvent)
+        if monitor:
+            q = q.where(SignalEvent.monitor == monitor)
+        if signal_type:
+            q = q.where(SignalEvent.signal_type == signal_type)
+        if min_level:
+            q = q.where(SignalEvent.level >= min_level)
+        if days:
+            since = datetime.utcnow() - timedelta(days=days)
+            q = q.where(SignalEvent.ts >= since)
+        q = q.order_by(desc(SignalEvent.ts)).limit(limit)
+        return self.s.execute(q).scalars().all()
+
+    def signal_types(self, monitor: Optional[str] = None):
+        q = select(SignalTypeRegistry)
+        if monitor:
+            q = q.where(SignalTypeRegistry.monitor == monitor)
+        q = q.order_by(SignalTypeRegistry.monitor, SignalTypeRegistry.signal_type)
+        return self.s.execute(q).scalars().all()

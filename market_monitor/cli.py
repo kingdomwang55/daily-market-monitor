@@ -440,10 +440,9 @@ def cmd_db_info(args):
     )
     from sqlalchemy import select, func
 
-    print(f"🗄️  DB: {db_info()}\n")
+    info = db_info()
+    table_counts = []
     with get_session() as s:
-        print(f"{'Table':<24} {'Rows':>10}")
-        print("-" * 36)
         for tbl, name in [
             (MonitorRegistry, "monitor_registry"),
             (SymbolRegistry, "symbol_registry"),
@@ -454,7 +453,17 @@ def cmd_db_info(args):
             (AlertDedup, "alert_dedup"),
         ]:
             n = s.execute(select(func.count()).select_from(tbl)).scalar()
-            print(f"{name:<24} {n:>10}")
+            table_counts.append({"table": name, "rows": int(n or 0)})
+
+    if args.json:
+        _print_json({"database": info, "tables": table_counts})
+        return
+
+    print(f"🗄️  DB: {info}\n")
+    print(f"{'Table':<24} {'Rows':>10}")
+    print("-" * 36)
+    for row in table_counts:
+        print(f"{row['table']:<24} {row['rows']:>10}")
 
 
 def cmd_db_query(args):
@@ -469,6 +478,34 @@ def cmd_db_query(args):
             min_level=args.level,
             limit=args.limit,
         )
+        if args.json:
+            payload = []
+            for r in rows:
+                signals = [
+                    {
+                        "id": sig.id,
+                        "signal_type": sig.signal_type,
+                        "symbol": sig.symbol,
+                        "level": sig.level,
+                    }
+                    for sig in getattr(r, "signals", [])
+                ]
+                payload.append({
+                    "id": r.id,
+                    "ts": r.ts.isoformat() + "Z",
+                    "trade_date": r.trade_date.isoformat(),
+                    "monitor": r.monitor,
+                    "scenario": r.scenario,
+                    "max_level": r.max_level,
+                    "title": r.title,
+                    "sent_ok": r.sent_ok,
+                    "error": r.error,
+                    "signal_ids": [sig["id"] for sig in signals],
+                    "signal_types": [sig["signal_type"] for sig in signals],
+                    "signals": signals,
+                })
+            _print_json(payload)
+            return
         if not rows:
             print(f"💭 没找到符合条件的推送")
             return
@@ -488,15 +525,24 @@ def cmd_db_stats(args):
 
     with get_session() as s:
         repo = StatsRepository(s)
+        monitor_stats = repo.monitor_stats(args.days)
+        sig_stats = repo.signal_frequency(args.days)
+
+        if args.json:
+            _print_json({
+                "days": args.days,
+                "monitor_stats": monitor_stats,
+                "signal_frequency": sig_stats,
+            })
+            return
 
         print(f"📊 最近 {args.days} 天 monitor 推送统计:\n")
         print(f"  {'Monitor':<20} {'Count':>8} {'AvgL':>6} {'MaxL':>6}")
         print("  " + "-" * 42)
-        for row in repo.monitor_stats(args.days):
+        for row in monitor_stats:
             print(f"  {row['monitor']:<20} {row['count']:>8} "
                   f"{row['avg_level']:>6} {row['max_level']:>6}")
 
-        sig_stats = repo.signal_frequency(args.days)
         if sig_stats:
             print(f"\n🎯 信号类型频次:\n")
             print(f"  {'Signal Type':<24} {'Count':>8}")
@@ -818,6 +864,7 @@ def cmd_signal_list(args):
             s,
             monitor=args.monitor,
             signal_type=args.type,
+            push_log_id=args.push_id,
             days=args.days,
             min_level=args.level,
             limit=args.limit,
@@ -992,6 +1039,7 @@ def main():
     p_db_init.set_defaults(func=cmd_db_init)
 
     p_db_info = db_sub.add_parser("info", help="查看当前 DB 信息 + 表行数统计")
+    p_db_info.add_argument("--json", action="store_true", help="输出 JSON")
     p_db_info.set_defaults(func=cmd_db_info)
 
     p_db_query = db_sub.add_parser("query", help="查推送历史")
@@ -999,10 +1047,12 @@ def main():
     p_db_query.add_argument("--days", type=int, default=7, help="最近多少天（默认 7）")
     p_db_query.add_argument("--level", type=int, default=0, help="最低 level（默认 0）")
     p_db_query.add_argument("--limit", type=int, default=20, help="最多多少条（默认 20）")
+    p_db_query.add_argument("--json", action="store_true", help="输出 JSON")
     p_db_query.set_defaults(func=cmd_db_query)
 
     p_db_stats = db_sub.add_parser("stats", help="推送统计")
     p_db_stats.add_argument("--days", type=int, default=30, help="最近多少天")
+    p_db_stats.add_argument("--json", action="store_true", help="输出 JSON")
     p_db_stats.set_defaults(func=cmd_db_stats)
 
     # trade（W1 交易日志）
@@ -1070,6 +1120,7 @@ def main():
     p_sig_list = sig_sub.add_parser("list", help="列出 signal_event")
     p_sig_list.add_argument("--monitor", help="按 monitor 过滤")
     p_sig_list.add_argument("--type", help="按 signal_type 过滤")
+    p_sig_list.add_argument("--push-id", type=int, dest="push_id", help="按 push_log id 过滤")
     p_sig_list.add_argument("--days", type=int, default=7, help="最近多少天（默认 7）")
     p_sig_list.add_argument("--level", type=int, default=0, help="最低 level（默认 0）")
     p_sig_list.add_argument("--limit", type=int, default=50, help="最多多少条（默认 50）")

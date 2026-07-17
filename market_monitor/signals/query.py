@@ -55,6 +55,7 @@ def list_signals(
     *,
     monitor: str | None = None,
     signal_type: str | None = None,
+    push_log_id: int | None = None,
     days: int | None = 7,
     min_level: int = 0,
     limit: int = 50,
@@ -63,6 +64,7 @@ def list_signals(
         rows = SignalEventRepository(session).recent(
             monitor=monitor,
             signal_type=signal_type,
+            push_log_id=push_log_id,
             days=days,
             min_level=min_level,
             limit=limit,

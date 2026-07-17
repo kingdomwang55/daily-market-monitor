@@ -140,6 +140,8 @@ market-monitor logs pulse --tail 100
 market-monitor db info
 market-monitor db query --days 7 --level 1
 market-monitor db stats --days 30
+market-monitor db query --days 7 --json
+market-monitor db stats --days 30 --json
 ```
 
 结构化信号：
@@ -147,6 +149,7 @@ market-monitor db stats --days 30
 ```bash
 market-monitor signal types --json
 market-monitor signal list --days 7 --json
+market-monitor signal list --push-id <push_log_id> --json
 market-monitor signal show <id> --json
 ```
 
@@ -232,6 +235,7 @@ market-monitor db info
 4. 运行、推送、落库、复盘必须可验证。
 5. CLI 是一等接口，OpenClaw 和人都应能稳定调用。
 6. 新增监控应尽量配置化、可测试、可回放。
+7. SQL 是研究库主事实源；JSONL 推送日志保留为兼容与人工同步材料。
 
 ## 文档
 

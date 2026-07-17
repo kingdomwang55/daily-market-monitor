@@ -109,18 +109,21 @@ market-monitor run price_alert --force
 market-monitor db query --days 7
 market-monitor db query --monitor pulse --days 7
 market-monitor db query --level 2 --days 30
+market-monitor db query --days 7 --json
 ```
 
 统计：
 
 ```bash
 market-monitor db stats --days 30
+market-monitor db stats --days 30 --json
 ```
 
 数据库信息：
 
 ```bash
 market-monitor db info
+market-monitor db info --json
 ```
 
 ### 3.5 查看结构化信号
@@ -138,6 +141,7 @@ market-monitor signal types --monitor pulse --json
 market-monitor signal list --days 7 --json
 market-monitor signal list --monitor pulse --days 7 --json
 market-monitor signal list --level 2 --days 30 --json
+market-monitor signal list --push-id 123 --json
 ```
 
 查看单条信号：
@@ -150,7 +154,8 @@ market-monitor signal show 123 --json
 
 - `signal types` 即使本机数据库还未初始化，也会回退到内置 seed 元数据。
 - `signal list` 在数据库未初始化或暂无信号时返回空数组。
-- 当前已有读侧和 JSON 契约；后续 Phase 2 会把更多 monitor 的规则结果迁移成一等 Signal。
+- 当前已有读侧和 JSON 契约；核心告警类 monitor 已开始把规则结果迁移成一等 Signal。
+- `db query --json` 会返回推送及其关联的 `signal_ids` / `signal_types`。
 
 ### 3.6 纸面交易
 
@@ -221,7 +226,8 @@ OpenClaw 读取结果后再做中文总结。
 
 ```bash
 market-monitor db stats --days 7
-market-monitor db query --days 7 --limit 50
+market-monitor db query --days 7 --limit 50 --json
+market-monitor signal list --days 7 --json
 market-monitor trade pnl --days 7
 market-monitor trade review --period week
 ```
@@ -251,24 +257,41 @@ market-monitor db info
 
 ## 5. 当前限制
 
-当前 CLI 还没有全局 `--json` 契约，但结构化信号已经提供稳定 JSON 读侧。因此 OpenClaw 现在应优先：
+当前 CLI 还没有全局 `--json` 契约，但结构化信号和 SQL 推送读侧已经提供稳定 JSON。因此 OpenClaw 现在应优先：
 
 1. 用 `signal ... --json` 查询结构化信号。
-2. 用 `db query/stats` 获取推送历史文本摘要。
+2. 用 `db query/stats --json` 获取推送历史和统计。
 3. 必要时只读 SQLite。
 4. 避免依赖中文文案中的脆弱格式。
 
 后续 Phase 将继续补充机器接口：
 
 ```bash
-market-monitor db stats --json
 market-monitor trade list --json
 market-monitor review weekly --json
 ```
 
 ---
 
-## 6. 数据库入口
+## 6. SQL 主事实源与 JSONL 兼容日志
+
+研究库主事实源是 SQLite/SQLAlchemy 数据层：
+
+- `push_log`：推送事实与发送状态。
+- `signal_event`：结构化信号事实。
+- `paper_trade` / `trade_signal_link`：行动与交易记录。
+
+`logs/push_YYYY-MM-DD.jsonl` 仍会保留，用途是：
+
+- 人工同步飞书日报。
+- 兼容旧的 `decision_tracker`。
+- 调试或离线查看原始推送文本。
+
+OpenClaw 新功能应优先读取 SQL CLI JSON，不应把 JSONL 当成主事实源。
+
+---
+
+## 7. 数据库入口
 
 默认数据库：
 
@@ -282,11 +305,11 @@ data/market.db
 MARKET_DB_URL="sqlite:////absolute/path/to/market.db"
 ```
 
-OpenClaw 可以直接查询 SQLite，但推荐优先使用 CLI。直接查询时应只读，不要绕过 repository 修改数据。
+OpenClaw 可以直接查询 SQLite，但推荐优先使用 CLI JSON。直接查询时应只读，不要绕过 repository 修改数据。
 
 ---
 
-## 7. 生成或修改规则的流程
+## 8. 生成或修改规则的流程
 
 当用户要求 OpenClaw 新增或修改监控规则时，推荐流程：
 
@@ -309,7 +332,7 @@ market-monitor run <monitor> --snapshot
 
 ---
 
-## 8. 安全边界
+## 9. 安全边界
 
 OpenClaw 不应主动输出或提交：
 
@@ -323,7 +346,7 @@ OpenClaw 不应主动输出或提交：
 
 ---
 
-## 9. 升级后的目标体验
+## 10. 升级后的目标体验
 
 目标不是让 OpenClaw 每次重新回答“市场怎么样”，而是让它基于事实源回答：
 

@@ -365,18 +365,19 @@ market-monitor signal show <id>
 
 任务：
 
-- 支持 `trade add --signal-id`。
-- 支持 signal 标记：`acted` / `ignored` / `watching`。
-- 支持 `outcome backfill --days N`。
-- 支持周/月复盘从 SQL 信号、推送、交易、outcome 生成。
+- 支持 `trade add --signal-id ... --json`，并自动写入 `trade_signal_link(decision=act)`。
+- 支持 signal 标记：`market-monitor signal mark <id> --decision act|skip|noise|watch --json`。
+- 支持 `market-monitor signal outcome backfill --days N --json`。
+- 支持交易列表、详情、盈亏、复盘的 JSON 输出。
 - 逐步收敛 `decision_tracker` JSONL 到 SQL 主路径。
 
 验收：
 
 ```bash
-market-monitor trade add --signal-id 123 --symbol sh000001 --price 3800 --qty 1
-market-monitor outcome backfill --days 30
-market-monitor review weekly --json
+market-monitor signal mark 123 --decision skip --reason "等待确认" --json
+market-monitor trade add sh000001 3800 1 --signal-id 123 --json
+market-monitor signal outcome backfill --days 30 --json
+market-monitor trade review --period week --json
 ```
 
 能够形成一条完整链路：Signal -> Push -> Action/Trade -> Outcome -> Review。
@@ -390,13 +391,14 @@ market-monitor review weekly --json
 - AI 解读挂在 `render/enrich` 或 `research` 层。
 - 关闭 AI 时，系统仍能完成核心流程。
 - AI 可从 SQL 信号生成解释、复盘和策略建议。
-- `decision_tracker` 演进为“AI 命题提取器”，输出进入统一信号/命题表。
+- `decision_tracker` 演进为“AI 命题提取器”，可通过 `market-monitor decision import-sql --date YYYY-MM-DD --json` 输出进入统一 `signal_event`。
 
 验收：
 
 - `ai.enabled=false` 时所有核心 monitor 可运行。
 - `ai.enabled=true` 时报告更丰富，但不改变规则 Signal 的事实判断。
 - AI 失败不会阻断推送和落库。
+- 已提取的 decision JSONL 可幂等导入 SQL，并作为 `decision_bullish` / `decision_bearish` / `decision_neutral` 信号查询。
 
 ### Phase 6：本地研究库页面
 
@@ -417,6 +419,7 @@ System     monitor 健康、最近运行、配置状态
 - 页面只读取稳定 API/SQL，不承载核心业务判断。
 - 没有页面时 CLI 仍完整可用。
 - OpenClaw 仍优先通过 CLI/JSON 使用项目。
+- `market-monitor research export --out reports/research.html --json` 可生成本地静态研究页。
 
 ---
 

@@ -38,6 +38,7 @@ MONITORS = [
     ("midday",      "午间综述",             "periodic", "工作日 12:15 半日综述"),
     ("pulse",       "盘中脉搏",             "periodic", "工作日 10:30 / 14:00 条件优先"),
     ("shanghai_watch", "上证 3800 剧本",    "alert",    "上证 3800 剧本触发条件监控"),
+    ("decision",    "AI 决策命题",          "research", "从推送日志抽取的可检验判断"),
 ]
 
 
@@ -131,6 +132,11 @@ SIGNAL_TYPES = [
     ("shanghai_shrink_break_3800", "shanghai_watch", "缩量破位 3800",     -1, "缩量跌破 3800"),
     ("shanghai_near_stop_3700",   "shanghai_watch", "逼近止损 3700",     -1, "逼近 3700 止损位"),
     ("shanghai_break_stop_3700",  "shanghai_watch", "跌破止损 3700",     -1, "跌破 3700 止损位"),
+
+    # decision ───────────────────────────
+    ("decision_bullish", "decision", "AI 看多命题", 1, "AI 从推送提取的看多判断"),
+    ("decision_bearish", "decision", "AI 看空命题", -1, "AI 从推送提取的看空判断"),
+    ("decision_neutral", "decision", "AI 中性命题", 0, "AI 从推送提取的中性/关注判断"),
 ]
 
 

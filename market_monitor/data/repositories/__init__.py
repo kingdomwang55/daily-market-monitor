@@ -13,6 +13,7 @@ from .trade_repo import (
     TradeSignalLinkRepository,
     TradeReviewRepository,
 )
+from .outcome_repo import SignalOutcomeRepository
 
 __all__ = [
     "PushLogRepository",
@@ -23,4 +24,5 @@ __all__ = [
     "PaperTradeRepository",
     "TradeSignalLinkRepository",
     "TradeReviewRepository",
+    "SignalOutcomeRepository",
 ]

@@ -393,6 +393,53 @@ def cmd_decision_monthly(args):
         print(report)
 
 
+def cmd_decision_import_sql(args):
+    """把 decision JSONL 导入结构化 signal_event。"""
+    from .core import decision_tracker as dt
+    from .data import get_session
+    from .research.decision_import import import_decisions, read_decision_jsonl
+
+    path = Path(args.path) if args.path else dt._day_path(args.date)
+    records = read_decision_jsonl(path)
+    with get_session() as s:
+        rows = import_decisions(s, records)
+        payload = {
+            "ok": True,
+            "source": str(path),
+            "read": len(records),
+            "created": len(rows),
+            "signal_ids": [row.id for row in rows],
+        }
+
+    if args.json:
+        _print_json(payload)
+        return
+
+    print(f"✅ 已从 {path} 导入 {payload['created']} 条 decision signal")
+    if payload["created"] == 0 and records:
+        print("   可能已经导入过，同一 decision_id 会自动跳过")
+
+
+def cmd_research_export(args):
+    """导出本地研究库静态页。"""
+    from .data import get_session
+    from .research.export import export_research_html
+
+    out = Path(args.out)
+    with get_session() as s:
+        payload = export_research_html(s, out, days=args.days)
+
+    if args.json:
+        _print_json(payload)
+        return
+
+    print(f"✅ 研究页已导出：{payload['out']}")
+    print(
+        f"   signals={payload['signals']} pushes={payload['pushes']} "
+        f"actions={payload['signal_actions']} trades={payload['trades']}"
+    )
+
+
 def cmd_calendar(args):
     """查看宏观事件日历"""
     from .core import calendar_events as cal
@@ -579,10 +626,59 @@ def _local_time(dt):
     )
 
 
+def _iso(dt):
+    if dt is None:
+        return None
+    return dt.isoformat() + ("Z" if getattr(dt, "tzinfo", None) is None else "")
+
+
+def _trade_to_dict(t):
+    return {
+        "id": t.id,
+        "symbol": t.symbol,
+        "name": t.name,
+        "action": t.action,
+        "strategy": t.strategy,
+        "tag": t.tag,
+        "status": t.status,
+        "entry_at": _iso(t.entry_at),
+        "entry_price": t.entry_price,
+        "qty": t.qty,
+        "entry_reason": t.entry_reason,
+        "close_at": _iso(t.close_at),
+        "close_price": t.close_price,
+        "close_reason": t.close_reason,
+        "stop_loss": t.stop_loss,
+        "take_profit": t.take_profit,
+        "pnl": t.pnl,
+        "pnl_pct": t.pnl_pct,
+        "hold_days": t.hold_days,
+        "signal_event_id": t.signal_event_id,
+        "notes": t.notes,
+    }
+
+
+def _trade_review_to_dict(r):
+    return {
+        "period_type": r.period_type,
+        "period_key": r.period_key,
+        "trade_count": r.trade_count,
+        "win_count": r.win_count,
+        "loss_count": r.loss_count,
+        "win_rate": r.win_rate,
+        "total_pnl": r.total_pnl,
+        "avg_win": r.avg_win,
+        "avg_loss": r.avg_loss,
+        "best_trade_id": r.best_trade_id,
+        "worst_trade_id": r.worst_trade_id,
+        "generated_at": _iso(r.generated_at),
+    }
+
+
 def cmd_trade_add(args):
     """添加纸面交易（开仓）"""
     from .data import get_session
-    from .data.repositories import PaperTradeRepository
+    from .data.repositories import PaperTradeRepository, TradeSignalLinkRepository
 
     with get_session() as s:
         repo = PaperTradeRepository(s)
@@ -600,6 +696,20 @@ def cmd_trade_add(args):
             signal_event_id=args.signal_id,
             notes=args.notes,
         )
+        link = None
+        if args.signal_id:
+            link = TradeSignalLinkRepository(s).create(
+                signal_event_id=args.signal_id,
+                decision="act",
+                paper_trade_id=t.id,
+                reason=args.reason,
+            )
+        payload = _trade_to_dict(t)
+        if link is not None:
+            payload["signal_link_id"] = link.id
+    if args.json:
+        _print_json(payload)
+        return
     print(f"✅ 已开仓 #{t.id}")
     print(f"   {t.symbol} {'做多' if t.action == 'long' else '做空'} @ {t.entry_price} × {t.qty}")
     if t.strategy:
@@ -623,7 +733,14 @@ def cmd_trade_close(args):
             close_reason=args.reason,
         )
         if closed is None:
+            if args.json:
+                _print_json({"ok": False, "error": "not_found_or_closed", "trade_id": args.trade_id})
+                return
             print(f"❌ 交易 #{args.trade_id} 不存在或已平仓")
+            return
+
+        if args.json:
+            _print_json(_trade_to_dict(closed))
             return
 
         print(f"✅ 已平仓 #{closed.id}")
@@ -650,6 +767,13 @@ def cmd_trade_list(args):
         else:
             open_trades = repo.list_open(strategy=args.strategy)
             closed_trades = []
+
+        if args.json:
+            _print_json({
+                "open": [_trade_to_dict(t) for t in open_trades],
+                "closed": [_trade_to_dict(t) for t in closed_trades],
+            })
+            return
 
         if open_trades:
             print(f"📂 持仓中 ({len(open_trades)} 笔):\n")
@@ -682,6 +806,15 @@ def cmd_trade_pnl(args):
     with get_session() as s:
         repo = PaperTradeRepository(s)
         summary = repo.pnl_summary(days=args.days)
+        strat_stats = repo.by_strategy_stats(days=args.days)
+
+        if args.json:
+            _print_json({
+                "days": args.days,
+                "summary": summary,
+                "by_strategy": strat_stats,
+            })
+            return
 
         print(f"📊 纸面交易盈亏总览" + (f" (近 {args.days} 天)" if args.days else ""))
         print()
@@ -700,7 +833,6 @@ def cmd_trade_pnl(args):
                 print(f"  盈亏比: {summary['profit_factor']:.2f}")
 
         # 按策略分组
-        strat_stats = repo.by_strategy_stats(days=args.days)
         if strat_stats:
             print(f"\n🎯 按策略拆分:\n")
             print(f"  {'Strategy':<12} {'Count':>6} {'TotalPnL':>12} {'AvgPct':>10}")
@@ -733,7 +865,18 @@ def cmd_trade_review(args):
 
         r = rrepo.generate(period_type=period_type, period_key=period_key)
         if r is None or r.trade_count == 0:
+            if args.json:
+                _print_json({
+                    "period_type": period_type,
+                    "period_key": period_key,
+                    "trade_count": 0,
+                })
+                return
             print(f"💭 {period_type} {period_key} 无平仓交易")
+            return
+
+        if args.json:
+            _print_json(_trade_review_to_dict(r))
             return
 
         print(f"📑 复盘: {period_type} {period_key}")
@@ -768,7 +911,14 @@ def cmd_trade_show(args):
         repo = PaperTradeRepository(s)
         t = repo.by_id(args.trade_id)
         if t is None:
+            if args.json:
+                _print_json({"ok": False, "error": "not_found", "trade_id": args.trade_id})
+                return
             print(f"❌ 交易 #{args.trade_id} 不存在")
+            return
+
+        if args.json:
+            _print_json(_trade_to_dict(t))
             return
 
         print(f"📋 交易 #{t.id} [{t.status}]\n")
@@ -924,6 +1074,95 @@ def cmd_signal_show(args):
         print(json.dumps(metrics, ensure_ascii=False, indent=2, default=str))
 
 
+def cmd_signal_mark(args):
+    """标记一个信号后的人工决策。"""
+    from .data import get_session
+    from .data.repositories import SignalEventRepository, TradeSignalLinkRepository
+
+    with get_session() as s:
+        signal = SignalEventRepository(s).by_id(args.id)
+        if signal is None:
+            if args.json:
+                _print_json({"ok": False, "error": "signal_not_found", "signal_event_id": args.id})
+                return
+            print(f"❌ 未找到 signal #{args.id}")
+            sys.exit(1)
+        link = TradeSignalLinkRepository(s).create(
+            signal_event_id=args.id,
+            decision=args.decision,
+            paper_trade_id=args.trade_id,
+            reason=args.reason,
+        )
+        payload = {
+            "ok": True,
+            "id": link.id,
+            "signal_event_id": link.signal_event_id,
+            "paper_trade_id": link.paper_trade_id,
+            "decision": link.decision,
+            "reason": link.reason,
+            "created_at": _iso(link.created_at),
+        }
+
+    if args.json:
+        _print_json(payload)
+        return
+
+    print(f"✅ 已标记 signal #{args.id}: {args.decision}")
+    if args.trade_id:
+        print(f"   关联交易: #{args.trade_id}")
+    if args.reason:
+        print(f"   理由: {args.reason}")
+
+
+def cmd_signal_outcome_backfill(args):
+    """回填信号后续收益表现。"""
+    from .data import get_session
+    from .data.repositories.outcome_repo import SignalOutcomeRepository, signal_outcome_to_dict
+
+    with get_session() as s:
+        repo = SignalOutcomeRepository(s)
+        rows = repo.backfill_recent(days=args.days, limit=args.limit)
+        payload = [signal_outcome_to_dict(r) for r in rows]
+
+    if args.json:
+        _print_json({"count": len(payload), "outcomes": payload})
+        return
+
+    print(f"✅ 已回填 {len(payload)} 条 signal outcome")
+    for r in payload[:20]:
+        print(
+            f"  signal #{r['signal_event_id']:<5} {r['signal_type']:<24} "
+            f"T+1={_fmt_pct((r['t1_pct'] or 0) / 100) if r['t1_pct'] is not None else '-'} "
+            f"hit={r['t1_hit']}"
+        )
+
+
+def cmd_signal_outcome_list(args):
+    """列出已回填的信号验证结果。"""
+    from .data import get_session
+    from .data.repositories.outcome_repo import SignalOutcomeRepository, signal_outcome_to_dict
+
+    with get_session() as s:
+        rows = SignalOutcomeRepository(s).recent(days=args.days, limit=args.limit)
+        payload = [signal_outcome_to_dict(r) for r in rows]
+
+    if args.json:
+        _print_json(payload)
+        return
+
+    if not payload:
+        print("💭 还没有 signal outcome，先运行 market-monitor signal outcome backfill")
+        return
+
+    print(f"📋 共 {len(payload)} 条 outcome:\n")
+    for r in payload:
+        print(
+            f"  signal #{r['signal_event_id']:<5} {r['signal_type']:<24} "
+            f"T+1={r['t1_pct']}% T+3={r['t3_pct']}% T+5={r['t5_pct']}% "
+            f"hit={r['t1_hit']}"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="market-monitor",
@@ -1024,6 +1263,22 @@ def main():
     d_monthly.add_argument("--push", action="store_true", help="推送到飞书")
     d_monthly.set_defaults(func=cmd_decision_monthly)
 
+    d_import_sql = d_sub.add_parser("import-sql", help="把 decision JSONL 导入 signal_event")
+    d_import_sql.add_argument("--date", required=True, help="日期 YYYY-MM-DD")
+    d_import_sql.add_argument("--path", help="指定 JSONL 文件，默认 logs/decisions/YYYY-MM-DD.jsonl")
+    d_import_sql.add_argument("--json", action="store_true", help="输出 JSON")
+    d_import_sql.set_defaults(func=cmd_decision_import_sql)
+
+    # research
+    p_research = sub.add_parser("research", help="本地研究库")
+    research_sub = p_research.add_subparsers(dest="action", required=True)
+
+    p_research_export = research_sub.add_parser("export", help="导出本地研究库 HTML")
+    p_research_export.add_argument("--out", default="reports/research.html", help="输出 HTML 文件")
+    p_research_export.add_argument("--days", type=int, default=30, help="最近多少天（默认 30）")
+    p_research_export.add_argument("--json", action="store_true", help="输出 JSON")
+    p_research_export.set_defaults(func=cmd_research_export)
+
     # calendar
     p_calendar = sub.add_parser("calendar", help="宏观事件日历")
     p_calendar.add_argument("--days", type=int, default=7, help="未来多少天（默认 7）")
@@ -1072,12 +1327,14 @@ def main():
     p_tadd.add_argument("--take-profit", type=float, dest="take_profit", help="止盈价")
     p_tadd.add_argument("--signal-id", type=int, dest="signal_id", help="关联 signal_event id")
     p_tadd.add_argument("--notes", help="备注")
+    p_tadd.add_argument("--json", action="store_true", help="输出 JSON")
     p_tadd.set_defaults(func=cmd_trade_add)
 
     p_tclose = trade_sub.add_parser("close", help="平仓")
     p_tclose.add_argument("trade_id", type=int, help="交易 ID")
     p_tclose.add_argument("price", type=float, help="平仓价")
     p_tclose.add_argument("--reason", help="平仓理由")
+    p_tclose.add_argument("--json", action="store_true", help="输出 JSON")
     p_tclose.set_defaults(func=cmd_trade_close)
 
     p_tlist = trade_sub.add_parser("list", help="列出交易")
@@ -1086,19 +1343,23 @@ def main():
     p_tlist.add_argument("--strategy", help="按策略过滤")
     p_tlist.add_argument("--days", type=int, help="已平仓限定近 N 天")
     p_tlist.add_argument("--limit", type=int, default=50, help="每类最多多少条（默认 50）")
+    p_tlist.add_argument("--json", action="store_true", help="输出 JSON")
     p_tlist.set_defaults(func=cmd_trade_list)
 
     p_tshow = trade_sub.add_parser("show", help="查看单笔交易详情")
     p_tshow.add_argument("trade_id", type=int, help="交易 ID")
+    p_tshow.add_argument("--json", action="store_true", help="输出 JSON")
     p_tshow.set_defaults(func=cmd_trade_show)
 
     p_tpnl = trade_sub.add_parser("pnl", help="盈亏统计")
     p_tpnl.add_argument("--days", type=int, help="最近多少天")
+    p_tpnl.add_argument("--json", action="store_true", help="输出 JSON")
     p_tpnl.set_defaults(func=cmd_trade_pnl)
 
     p_trev = trade_sub.add_parser("review", help="生成周/月复盘")
     p_trev.add_argument("--period", default="week", choices=["week", "month"], help="周报或月报")
     p_trev.add_argument("--key", help="时间 key，例 2026-W28 或 2026-07（默认本周/本月）")
+    p_trev.add_argument("--json", action="store_true", help="输出 JSON")
     p_trev.set_defaults(func=cmd_trade_review)
 
     # W4 Phase 2: 烟蒂股筛选器
@@ -1131,6 +1392,29 @@ def main():
     p_sig_show.add_argument("id", type=int, help="signal_event id")
     p_sig_show.add_argument("--json", action="store_true", help="输出 JSON")
     p_sig_show.set_defaults(func=cmd_signal_show)
+
+    p_sig_mark = sig_sub.add_parser("mark", help="标记信号后的人工决策")
+    p_sig_mark.add_argument("id", type=int, help="signal_event id")
+    p_sig_mark.add_argument("--decision", required=True, choices=["act", "skip", "noise", "watch"], help="处理方式")
+    p_sig_mark.add_argument("--trade-id", type=int, dest="trade_id", help="关联 paper_trade id")
+    p_sig_mark.add_argument("--reason", help="理由")
+    p_sig_mark.add_argument("--json", action="store_true", help="输出 JSON")
+    p_sig_mark.set_defaults(func=cmd_signal_mark)
+
+    p_sig_outcome = sig_sub.add_parser("outcome", help="信号结果验证")
+    sig_outcome_sub = p_sig_outcome.add_subparsers(dest="outcome_action", required=True)
+
+    p_sig_outcome_backfill = sig_outcome_sub.add_parser("backfill", help="回填 T+1/T+3/T+5 结果")
+    p_sig_outcome_backfill.add_argument("--days", type=int, default=30, help="最近多少天信号（默认 30）")
+    p_sig_outcome_backfill.add_argument("--limit", type=int, default=200, help="最多处理多少条（默认 200）")
+    p_sig_outcome_backfill.add_argument("--json", action="store_true", help="输出 JSON")
+    p_sig_outcome_backfill.set_defaults(func=cmd_signal_outcome_backfill)
+
+    p_sig_outcome_list = sig_outcome_sub.add_parser("list", help="列出 signal outcome")
+    p_sig_outcome_list.add_argument("--days", type=int, default=30, help="最近多少天（默认 30）")
+    p_sig_outcome_list.add_argument("--limit", type=int, default=100, help="最多多少条（默认 100）")
+    p_sig_outcome_list.add_argument("--json", action="store_true", help="输出 JSON")
+    p_sig_outcome_list.set_defaults(func=cmd_signal_outcome_list)
 
     args = parser.parse_args()
     args.func(args)

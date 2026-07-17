@@ -13,6 +13,8 @@
 from ..core.base import BaseMonitor
 from ..core import data_source as ds
 from ..core.teaching import stabilize_teaching
+from ..signals import Signal
+from ..signals.persist import persist_signals
 
 
 class PulseMonitor(BaseMonitor):
@@ -334,7 +336,6 @@ class PulseMonitor(BaseMonitor):
         meta = {
             "scenario": signal_type,
             "max_level": max_level,
-            "signal_type": signal_type,
             "a_avg_pct": round(idx_avg_all, 3),
             "signals_hit": signals_hit,
             "has_signal": has_signal,
@@ -347,9 +348,141 @@ class PulseMonitor(BaseMonitor):
             },
         }
         if self.send(message, meta=meta):
+            if has_signal:
+                self._persist_pulse_signals(
+                    big_movers=big_movers,
+                    proximity=proximity,
+                    stabilize_msg=stabilize_msg,
+                    sectors=sectors,
+                    defensive=defensive,
+                    idx_avg_all=idx_avg_all,
+                    push_log_id=self.last_push_log_id,
+                )
             status = "有信号" if has_signal else "心跳"
             self.log(f"✅ {status} 已发送 {self.now_str} type={signal_type} | 触发: {signals_hit}")
             self.state.save()
             return True
         self.log("❌ 发送失败")
         return False
+
+    def _persist_pulse_signals(
+        self,
+        *,
+        big_movers: list[dict],
+        proximity: list[str],
+        stabilize_msg: list[str],
+        sectors: list[dict],
+        defensive: list[dict],
+        idx_avg_all: float,
+        push_log_id=None,
+    ) -> None:
+        """Persist each pulse trigger family as structured Signal rows."""
+        signals = []
+
+        for item in big_movers:
+            direction = 1 if item["pct"] > 0 else -1
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type="pulse_index_up" if direction > 0 else "pulse_index_down",
+                title=f"{item['name']} 盘中{'拉升' if direction > 0 else '回落'}",
+                symbol=item.get("code"),
+                symbols=[item["code"]] if item.get("code") else [],
+                direction=direction,
+                level=2,
+                metrics={
+                    "name": item["name"],
+                    "price": item["price"],
+                    "pct": item["pct"],
+                    "trigger": "index_move",
+                    "a_avg_pct": round(idx_avg_all, 3),
+                },
+                dedup_key=f"pulse_index_{item.get('code')}_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        if proximity:
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type="pulse_near_key_level",
+                title="逼近关键点位",
+                direction=0,
+                level=2,
+                metrics={
+                    "trigger": "near_key_level",
+                    "warnings": proximity,
+                    "count": len(proximity),
+                },
+                dedup_key=f"pulse_near_key_level_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        if stabilize_msg:
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type="pulse_stabilize",
+                title="企稳信号命中",
+                direction=1,
+                level=2,
+                metrics={
+                    "trigger": "stabilize",
+                    "lines": stabilize_msg,
+                    "count": len(stabilize_msg),
+                },
+                dedup_key=f"pulse_stabilize_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        for item in sectors:
+            direction = 1 if item["pct"] > 0 else -1
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type="pulse_sector_move",
+                title=f"{item['name']} 板块异动",
+                direction=direction,
+                level=2,
+                metrics={
+                    "name": item["name"],
+                    "pct": item["pct"],
+                    "trigger": "sector_move",
+                },
+                dedup_key=f"pulse_sector_{item['name']}_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        for item in defensive:
+            direction = 1 if item["pct"] > 0 else -1
+            signals.append(Signal(
+                monitor=self.name,
+                signal_type="pulse_defensive",
+                title=f"{item['name']} 避险资产异动",
+                direction=direction,
+                level=2,
+                metrics={
+                    "name": item["name"],
+                    "category": item["category"],
+                    "price": item["price"],
+                    "pct": item["pct"],
+                    "trigger": "defensive_move",
+                },
+                dedup_key=f"pulse_defensive_{item['name']}_{self.today}",
+                status="pushed",
+                ts=self.now,
+                push_log_id=push_log_id,
+            ))
+
+        if not signals:
+            return
+        try:
+            from ..data import get_session
+            with get_session() as s:
+                persist_signals(s, signals)
+        except Exception as e:
+            self.log(f"结构化信号落库失败（不影响推送）: {e}")

@@ -2,7 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..models import SignalEvent, SignalTypeRegistry
@@ -61,6 +61,7 @@ class SignalEventRepository:
         days: Optional[int] = None,
         min_level: int = 0,
         limit: int = 50,
+        offset: int = 0,
     ):
         q = select(SignalEvent)
         if monitor:
@@ -74,8 +75,31 @@ class SignalEventRepository:
         if days:
             since = datetime.utcnow() - timedelta(days=days)
             q = q.where(SignalEvent.ts >= since)
-        q = q.order_by(desc(SignalEvent.ts)).limit(limit)
+        q = q.order_by(desc(SignalEvent.ts)).offset(offset).limit(limit)
         return self.s.execute(q).scalars().all()
+
+    def count(
+        self,
+        *,
+        monitor: Optional[str] = None,
+        signal_type: Optional[str] = None,
+        push_log_id: Optional[int] = None,
+        days: Optional[int] = None,
+        min_level: int = 0,
+    ) -> int:
+        q = select(func.count()).select_from(SignalEvent)
+        if monitor:
+            q = q.where(SignalEvent.monitor == monitor)
+        if signal_type:
+            q = q.where(SignalEvent.signal_type == signal_type)
+        if push_log_id is not None:
+            q = q.where(SignalEvent.push_log_id == push_log_id)
+        if min_level:
+            q = q.where(SignalEvent.level >= min_level)
+        if days:
+            since = datetime.utcnow() - timedelta(days=days)
+            q = q.where(SignalEvent.ts >= since)
+        return int(self.s.execute(q).scalar_one())
 
     def signal_types(self, monitor: Optional[str] = None):
         q = select(SignalTypeRegistry)

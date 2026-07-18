@@ -517,6 +517,7 @@ def cmd_db_query(args):
     """查推送历史"""
     from .data import get_session
     from .data.repositories import PushLogRepository
+    from .data.serializers import push_log_to_dict
 
     with get_session() as s:
         rows = PushLogRepository(s).recent(
@@ -526,31 +527,7 @@ def cmd_db_query(args):
             limit=args.limit,
         )
         if args.json:
-            payload = []
-            for r in rows:
-                signals = [
-                    {
-                        "id": sig.id,
-                        "signal_type": sig.signal_type,
-                        "symbol": sig.symbol,
-                        "level": sig.level,
-                    }
-                    for sig in getattr(r, "signals", [])
-                ]
-                payload.append({
-                    "id": r.id,
-                    "ts": r.ts.isoformat() + "Z",
-                    "trade_date": r.trade_date.isoformat(),
-                    "monitor": r.monitor,
-                    "scenario": r.scenario,
-                    "max_level": r.max_level,
-                    "title": r.title,
-                    "sent_ok": r.sent_ok,
-                    "error": r.error,
-                    "signal_ids": [sig["id"] for sig in signals],
-                    "signal_types": [sig["signal_type"] for sig in signals],
-                    "signals": signals,
-                })
+            payload = [push_log_to_dict(row) for row in rows]
             _print_json(payload)
             return
         if not rows:
@@ -633,46 +610,15 @@ def _iso(dt):
 
 
 def _trade_to_dict(t):
-    return {
-        "id": t.id,
-        "symbol": t.symbol,
-        "name": t.name,
-        "action": t.action,
-        "strategy": t.strategy,
-        "tag": t.tag,
-        "status": t.status,
-        "entry_at": _iso(t.entry_at),
-        "entry_price": t.entry_price,
-        "qty": t.qty,
-        "entry_reason": t.entry_reason,
-        "close_at": _iso(t.close_at),
-        "close_price": t.close_price,
-        "close_reason": t.close_reason,
-        "stop_loss": t.stop_loss,
-        "take_profit": t.take_profit,
-        "pnl": t.pnl,
-        "pnl_pct": t.pnl_pct,
-        "hold_days": t.hold_days,
-        "signal_event_id": t.signal_event_id,
-        "notes": t.notes,
-    }
+    from .data.serializers import paper_trade_to_dict
+
+    return paper_trade_to_dict(t)
 
 
 def _trade_review_to_dict(r):
-    return {
-        "period_type": r.period_type,
-        "period_key": r.period_key,
-        "trade_count": r.trade_count,
-        "win_count": r.win_count,
-        "loss_count": r.loss_count,
-        "win_rate": r.win_rate,
-        "total_pnl": r.total_pnl,
-        "avg_win": r.avg_win,
-        "avg_loss": r.avg_loss,
-        "best_trade_id": r.best_trade_id,
-        "worst_trade_id": r.worst_trade_id,
-        "generated_at": _iso(r.generated_at),
-    }
+    from .data.serializers import trade_review_to_dict
+
+    return trade_review_to_dict(r)
 
 
 def cmd_trade_add(args):
@@ -1045,10 +991,10 @@ def cmd_signal_list(args):
 def cmd_signal_show(args):
     """查看单条 signal_event。"""
     from .data import get_session
-    from .signals.query import get_signal
+    from .signals.query import get_signal_detail
 
     with get_session() as s:
-        row = get_signal(s, args.id)
+        row = get_signal_detail(s, args.id)
 
     if row is None:
         print(f"❌ 未找到 signal #{args.id}")
@@ -1072,6 +1018,18 @@ def cmd_signal_show(args):
     if metrics:
         print("\nMetrics:")
         print(json.dumps(metrics, ensure_ascii=False, indent=2, default=str))
+    if row.get("actions"):
+        print("\nActions:")
+        for action in row["actions"]:
+            print(f"  {action['decision']}: {action.get('reason') or '-'}")
+    if row.get("notes"):
+        print("\nNotes:")
+        for note in row["notes"]:
+            print(f"  {note['body']}")
+    if row.get("trades"):
+        print("\nTrades:")
+        for trade in row["trades"]:
+            print(f"  #{trade['id']} {trade['symbol']} [{trade['status']}]")
 
 
 def cmd_signal_mark(args):

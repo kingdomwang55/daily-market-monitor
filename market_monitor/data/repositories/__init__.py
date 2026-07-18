@@ -14,6 +14,9 @@ from .trade_repo import (
     TradeReviewRepository,
 )
 from .outcome_repo import SignalOutcomeRepository
+from .registry_repo import RegistryRepository
+from .note_repo import SignalNoteRepository
+from .system_repo import SystemRepository
 
 __all__ = [
     "PushLogRepository",
@@ -25,4 +28,7 @@ __all__ = [
     "TradeSignalLinkRepository",
     "TradeReviewRepository",
     "SignalOutcomeRepository",
+    "RegistryRepository",
+    "SignalNoteRepository",
+    "SystemRepository",
 ]

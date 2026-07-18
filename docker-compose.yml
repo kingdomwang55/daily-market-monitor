@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      MARKET_DB_URL: sqlite:////app/data/market.db
+      MARKET_WEB_HOST: 0.0.0.0
+      MARKET_WEB_PORT: 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped

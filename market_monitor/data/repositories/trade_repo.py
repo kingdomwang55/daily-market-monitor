@@ -2,10 +2,10 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import select, desc, func, and_
+from sqlalchemy import and_, desc, exists, func, select
 from sqlalchemy.orm import Session
 
-from ..models import PaperTrade, TradeSignalLink, TradeReview
+from ..models import PaperTrade, SignalEvent, SignalOutcome, TradeSignalLink, TradeReview
 
 
 SHANGHAI = timezone(timedelta(hours=8))
@@ -43,8 +43,10 @@ class PaperTradeRepository:
         signal_event_id: Optional[int] = None,
         notes: Optional[str] = None,
         entry_at: Optional[datetime] = None,
+        request_id: Optional[str] = None,
     ) -> PaperTrade:
         row = PaperTrade(
+            request_id=request_id,
             symbol=symbol,
             name=name,
             action=action,
@@ -63,6 +65,12 @@ class PaperTradeRepository:
         self.s.add(row)
         self.s.flush()
         return row
+
+    def open_trade_idempotent(self, request_id: str, **kwargs) -> tuple[PaperTrade, bool]:
+        existing = self.by_request_id(request_id)
+        if existing is not None:
+            return existing, False
+        return self.open_trade(request_id=request_id, **kwargs), True
 
     # ── 平仓 ────────────────────────────────────
     def close_trade(
@@ -109,6 +117,10 @@ class PaperTradeRepository:
     def by_id(self, trade_id: int) -> Optional[PaperTrade]:
         return self.s.get(PaperTrade, trade_id)
 
+    def by_request_id(self, request_id: str) -> Optional[PaperTrade]:
+        query = select(PaperTrade).where(PaperTrade.request_id == request_id)
+        return self.s.execute(query).scalars().first()
+
     def list_open(self, strategy: Optional[str] = None) -> List[PaperTrade]:
         q = select(PaperTrade).where(PaperTrade.status == "open")
         if strategy:
@@ -133,6 +145,57 @@ class PaperTradeRepository:
 
     def list_all(self, limit: int = 100) -> List[PaperTrade]:
         q = select(PaperTrade).order_by(desc(PaperTrade.entry_at)).limit(limit)
+        return list(self.s.execute(q).scalars().all())
+
+    def recent(
+        self,
+        *,
+        status: Optional[str] = None,
+        symbol: Optional[str] = None,
+        strategy: Optional[str] = None,
+        days: Optional[int] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[PaperTrade]:
+        q = select(PaperTrade)
+        if status:
+            q = q.where(PaperTrade.status == status)
+        if symbol:
+            q = q.where(PaperTrade.symbol == symbol)
+        if strategy:
+            q = q.where(PaperTrade.strategy == strategy)
+        if days:
+            since = _now_utc() - timedelta(days=days)
+            q = q.where(PaperTrade.entry_at >= since)
+        q = q.order_by(desc(PaperTrade.entry_at)).offset(offset).limit(limit)
+        return list(self.s.execute(q).scalars().all())
+
+    def count(
+        self,
+        *,
+        status: Optional[str] = None,
+        symbol: Optional[str] = None,
+        strategy: Optional[str] = None,
+        days: Optional[int] = None,
+    ) -> int:
+        q = select(func.count()).select_from(PaperTrade)
+        if status:
+            q = q.where(PaperTrade.status == status)
+        if symbol:
+            q = q.where(PaperTrade.symbol == symbol)
+        if strategy:
+            q = q.where(PaperTrade.strategy == strategy)
+        if days:
+            since = _now_utc() - timedelta(days=days)
+            q = q.where(PaperTrade.entry_at >= since)
+        return int(self.s.execute(q).scalar_one())
+
+    def by_signal(self, signal_event_id: int) -> List[PaperTrade]:
+        q = (
+            select(PaperTrade)
+            .where(PaperTrade.signal_event_id == signal_event_id)
+            .order_by(desc(PaperTrade.entry_at))
+        )
         return list(self.s.execute(q).scalars().all())
 
     # ── 盈亏统计 ────────────────────────────────
@@ -217,6 +280,40 @@ class TradeSignalLinkRepository:
         self.s.flush()
         return row
 
+    def create_idempotent(
+        self,
+        signal_event_id: int,
+        decision: str,
+        *,
+        paper_trade_id: Optional[int] = None,
+        reason: Optional[str] = None,
+    ) -> tuple[TradeSignalLink, bool]:
+        normalized_reason = reason.strip() if reason else None
+        query = select(TradeSignalLink).where(
+            TradeSignalLink.signal_event_id == signal_event_id,
+            TradeSignalLink.decision == decision,
+        )
+        if paper_trade_id is None:
+            query = query.where(TradeSignalLink.paper_trade_id.is_(None))
+        else:
+            query = query.where(TradeSignalLink.paper_trade_id == paper_trade_id)
+        if normalized_reason is None:
+            query = query.where(TradeSignalLink.reason.is_(None))
+        else:
+            query = query.where(TradeSignalLink.reason == normalized_reason)
+        existing = self.s.execute(
+            query.order_by(desc(TradeSignalLink.created_at)).limit(1)
+        ).scalars().first()
+        if existing is not None:
+            return existing, False
+
+        return self.create(
+            signal_event_id,
+            decision,
+            paper_trade_id=paper_trade_id,
+            reason=normalized_reason,
+        ), True
+
     def by_signal(self, signal_event_id: int) -> List[TradeSignalLink]:
         q = select(TradeSignalLink).where(
             TradeSignalLink.signal_event_id == signal_event_id
@@ -255,6 +352,30 @@ class TradeReviewRepository:
         local = _to_shanghai(dt)
         return local.strftime("%Y-%m")
 
+    @staticmethod
+    def period_bounds(period_type: str, period_key: str):
+        if period_type == "week":
+            try:
+                year, week = period_key.split("-W")
+                first_day = datetime.fromisocalendar(int(year), int(week), 1)
+                next_first = first_day + timedelta(days=7)
+            except (ValueError, IndexError):
+                return None
+        elif period_type == "month":
+            try:
+                year, month = (int(part) for part in period_key.split("-"))
+                first_day = datetime(year, month, 1)
+                next_first = (
+                    datetime(year + 1, 1, 1)
+                    if month == 12
+                    else datetime(year, month + 1, 1)
+                )
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+        return first_day - timedelta(hours=8), next_first - timedelta(hours=8)
+
     def upsert(self, period_type: str, period_key: str,
                **kwargs) -> TradeReview:
         row = self.s.get(TradeReview, (period_type, period_key))
@@ -278,34 +399,10 @@ class TradeReviewRepository:
                 else self.month_key(now)
             )
 
-        # 确定时间窗口
-        local = _to_shanghai(now)
-        if period_type == "week":
-            # period_key: 'YYYY-Www'
-            try:
-                yr, wk = period_key.split("-W")
-                yr, wk = int(yr), int(wk)
-                # ISO 周第 1 天 = 周一
-                first_day = datetime.fromisocalendar(yr, wk, 1)
-                last_day = datetime.fromisocalendar(yr, wk, 7)
-                # 转 UTC naive（+8 → UTC 就是 -8h）
-                since = first_day - timedelta(hours=8)
-                until = last_day + timedelta(hours=16)   # 到周日 24:00 shanghai
-            except (ValueError, IndexError):
-                return None
-        else:  # month
-            try:
-                yr, mo = period_key.split("-")
-                yr, mo = int(yr), int(mo)
-                first_local = datetime(yr, mo, 1)
-                if mo == 12:
-                    next_first = datetime(yr + 1, 1, 1)
-                else:
-                    next_first = datetime(yr, mo + 1, 1)
-                since = first_local - timedelta(hours=8)
-                until = next_first - timedelta(hours=8)
-            except (ValueError, IndexError):
-                return None
+        bounds = self.period_bounds(period_type, period_key)
+        if bounds is None:
+            return None
+        since, until = bounds
 
         # 拉取窗口内所有平仓单
         q = select(PaperTrade).where(
@@ -352,3 +449,56 @@ class TradeReviewRepository:
             .limit(limit)
         )
         return list(self.s.execute(q).scalars().all())
+
+    def analytics(self, period_type: str, period_key: str) -> Optional[Dict[str, Any]]:
+        bounds = self.period_bounds(period_type, period_key)
+        if bounds is None:
+            return None
+        since, until = bounds
+
+        frequency_rows = self.s.execute(
+            select(SignalEvent.signal_type, func.count(SignalEvent.id).label("count"))
+            .where(SignalEvent.ts >= since, SignalEvent.ts < until)
+            .group_by(SignalEvent.signal_type)
+            .order_by(desc("count"))
+        ).all()
+        decision_rows = self.s.execute(
+            select(TradeSignalLink.decision, func.count(TradeSignalLink.id).label("count"))
+            .where(TradeSignalLink.created_at >= since, TradeSignalLink.created_at < until)
+            .group_by(TradeSignalLink.decision)
+        ).all()
+        outcome_rows = self.s.execute(
+            select(SignalOutcome)
+            .join(SignalEvent, SignalEvent.id == SignalOutcome.signal_event_id)
+            .where(SignalEvent.ts >= since, SignalEvent.ts < until)
+        ).scalars().all()
+        pending = self.s.execute(
+            select(func.count())
+            .select_from(SignalEvent)
+            .where(
+                SignalEvent.ts >= since,
+                SignalEvent.ts < until,
+                ~exists().where(SignalOutcome.signal_event_id == SignalEvent.id),
+            )
+        ).scalar_one()
+        decided_hits = [row.t1_hit for row in outcome_rows if row.t1_hit is not None]
+
+        return {
+            "signal_frequency": [
+                {"signal_type": row.signal_type, "count": int(row.count)}
+                for row in frequency_rows
+            ],
+            "decision_distribution": {
+                row.decision: int(row.count) for row in decision_rows
+            },
+            "outcomes": {
+                "verified": len(outcome_rows),
+                "pending": int(pending),
+                "t1_hits": sum(1 for value in decided_hits if value),
+                "t1_misses": sum(1 for value in decided_hits if not value),
+                "t1_hit_rate": (
+                    sum(1 for value in decided_hits if value) / len(decided_hits)
+                    if decided_hits else None
+                ),
+            },
+        }

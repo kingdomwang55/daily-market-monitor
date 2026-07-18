@@ -2,10 +2,10 @@
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from ..models import PushLog, SignalEvent
+from ..models import PaperTrade, PushLog, SignalEvent, SignalOutcome
 
 
 class StatsRepository:
@@ -70,3 +70,44 @@ class StatsRepository:
         )
         rows = self.s.execute(q).all()
         return [{"signal_type": r.signal_type, "count": int(r.count or 0)} for r in rows]
+
+    def web_summary(self, days: int = 7) -> dict:
+        """Compact read model for the Web Today page."""
+        since = datetime.utcnow() - timedelta(days=days)
+        signal_filter = SignalEvent.ts >= since
+        push_filter = PushLog.ts >= since
+        trade_filter = PaperTrade.entry_at >= since
+
+        signal_count = self.s.execute(
+            select(func.count()).select_from(SignalEvent).where(signal_filter)
+        ).scalar_one()
+        push_count = self.s.execute(
+            select(func.count()).select_from(PushLog).where(push_filter)
+        ).scalar_one()
+        trade_count = self.s.execute(
+            select(func.count()).select_from(PaperTrade).where(trade_filter)
+        ).scalar_one()
+        max_level = self.s.execute(
+            select(func.max(SignalEvent.level)).where(signal_filter)
+        ).scalar_one()
+        open_trades = self.s.execute(
+            select(func.count()).select_from(PaperTrade).where(PaperTrade.status == "open")
+        ).scalar_one()
+        pending_outcomes = self.s.execute(
+            select(func.count())
+            .select_from(SignalEvent)
+            .where(
+                signal_filter,
+                ~exists().where(SignalOutcome.signal_event_id == SignalEvent.id),
+            )
+        ).scalar_one()
+
+        return {
+            "days": days,
+            "signals": int(signal_count),
+            "pushes": int(push_count),
+            "trades": int(trade_count),
+            "max_signal_level": int(max_level or 0),
+            "open_trades": int(open_trades),
+            "pending_outcomes": int(pending_outcomes),
+        }

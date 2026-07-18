@@ -278,6 +278,7 @@ class PaperTrade(Base):
     __tablename__ = "paper_trade"
 
     id:              Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id:      Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
     symbol:          Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     name:            Mapped[Optional[str]]   = mapped_column(String(128))
     action:          Mapped[str] = mapped_column(String(8), nullable=False, default="long")  # long/short
@@ -345,6 +346,25 @@ class TradeSignalLink(Base):
 
     __table_args__ = (
         Index("idx_signal_link_decision", "decision"),
+    )
+
+
+class SignalNote(Base):
+    """Human research notes attached to an immutable signal fact."""
+    __tablename__ = "signal_note"
+
+    id:              Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_event_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("signal_event.id"), nullable=False, index=True
+    )
+    body:            Mapped[str] = mapped_column(Text, nullable=False)
+    created_at:      Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at:      Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_signal_note_created", "signal_event_id", "created_at"),
     )
 
 

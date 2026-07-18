@@ -23,6 +23,7 @@ from .models import (
     SymbolOhlcDaily,
     PaperTrade,
     TradeSignalLink,
+    SignalNote,
     TradeReview,
 )
 
@@ -42,5 +43,6 @@ __all__ = [
     "SymbolOhlcDaily",
     "PaperTrade",
     "TradeSignalLink",
+    "SignalNote",
     "TradeReview",
 ]

@@ -42,7 +42,10 @@ market-monitor/
 │   ├── core/          # 配置、飞书、AI、行情源、状态等公共能力
 │   ├── data/          # SQLAlchemy models、repositories、数据库入口
 │   ├── monitors/      # 各监控实现
+│   ├── api/           # FastAPI Web/API
+│   ├── ops/           # SQLite 备份恢复等运维能力
 │   └── cli.py         # 命令行入口
+├── frontend/          # Vue 3 + TypeScript + Vite
 ├── alembic/           # 数据库迁移
 ├── config/            # YAML 配置模板
 ├── launchd/           # macOS 定时任务模板
@@ -94,6 +97,65 @@ python -m alembic -c alembic.ini upgrade head
 python -m market_monitor.cli db init
 ```
 
+## 本地 Web 研究库
+
+Web 版使用 FastAPI + Vue，读取同一份 SQLite 研究库，不触发 monitor，也不接管现有定时任务。原始信号保持不可变，页面写入仅限人工判断、批注、纸面交易和复盘生成。
+
+Docker 启动：
+
+```bash
+docker compose up --build
+```
+
+启动后访问：
+
+- Web 页面：`http://127.0.0.1:8000/`
+- API 健康检查：`http://127.0.0.1:8000/api/health`
+- OpenAPI 文档：`http://127.0.0.1:8000/docs`
+
+主要页面：
+
+- `/`：今日概览
+- `/signals`：信号筛选与详情研究
+- `/trades`：纸面交易录入、筛选与平仓
+- `/reviews/weekly`、`/reviews/monthly`：周月复盘与 Markdown 导出
+- `/system`：运行检查、monitor 和数据库状态
+
+主要 API：
+
+- `/api/monitors`、`/api/signal-types`
+- `/api/signals`、`/api/signals/{id}`
+- `/api/pushes`、`/api/pushes/{id}`
+- `/api/trades`、`/api/trades/{id}`、`/api/trades/{id}/close`
+- `/api/signals/{id}/actions`、`/api/signals/{id}/notes`
+- `/api/reviews`、`/api/reviews/generate`、复盘 Markdown 导出
+- `/api/system/status`
+- `/api/stats/summary`
+
+SQLite 使用宿主机 `./data/market.db`，通过 bind volume 持久化。容器启动时会自动执行 Alembic migration 和幂等种子初始化。
+
+默认仅绑定本机。需要为写操作增加令牌时，在 Compose 环境中设置 `MARKET_WEB_TOKEN`，再到系统页把同一令牌保存到当前浏览器会话。读操作不受影响。
+
+备份与恢复：
+
+```bash
+python scripts/backup_db.py
+docker compose stop app
+python scripts/restore_db.py --from data/backups/market-YYYYMMDD-HHMMSS.db --yes
+docker compose up -d app
+```
+
+恢复前会校验备份，并自动保留当前数据库。完整运行手册见 [docs/WEB_OPERATIONS.md](docs/WEB_OPERATIONS.md)。
+
+本地前后端开发：
+
+```bash
+market-monitor-web
+cd frontend
+npm install
+npm run dev
+```
+
 ## 验证
 
 本地质量门禁：
@@ -101,6 +163,7 @@ python -m market_monitor.cli db init
 ```bash
 bash scripts/verify.sh
 python -m pytest
+cd frontend && npm test && npm run build
 python -m market_monitor.cli doctor --ci
 ```
 
@@ -227,6 +290,8 @@ python -m alembic -c alembic.ini upgrade head
 market-monitor db info
 ```
 
+不要使用普通 `cp` 备份运行中的 WAL 数据库；请使用 `python scripts/backup_db.py`。
+
 ## 设计原则
 
 1. 触发才推，避免噪音。
@@ -247,6 +312,9 @@ market-monitor db info
 - [如何添加新监控](docs/ADD_MONITOR.md)
 - [预警规则详解](docs/ALERTS.md)
 - [迁移说明](docs/MIGRATION.md)
+- [Web 与 Docker 运行手册](docs/WEB_OPERATIONS.md)
+- [Web API 使用说明](docs/WEB_API.md)
+- [Web UI 实施计划与验收](docs/WEB_UI_DOCKER_PLAN.md)
 
 ## License
 

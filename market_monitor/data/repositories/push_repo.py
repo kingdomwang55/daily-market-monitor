@@ -2,7 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..models import PushLog
@@ -51,7 +51,8 @@ class PushLogRepository:
         return row
 
     def recent(self, monitor: Optional[str] = None, limit: int = 20,
-               days: Optional[int] = None, min_level: int = 0):
+               days: Optional[int] = None, min_level: int = 0,
+               offset: int = 0):
         q = select(PushLog)
         if monitor:
             q = q.where(PushLog.monitor == monitor)
@@ -60,8 +61,20 @@ class PushLogRepository:
         if days:
             since = datetime.utcnow() - timedelta(days=days)
             q = q.where(PushLog.ts >= since)
-        q = q.order_by(desc(PushLog.ts)).limit(limit)
+        q = q.order_by(desc(PushLog.ts)).offset(offset).limit(limit)
         return self.s.execute(q).scalars().all()
+
+    def count(self, monitor: Optional[str] = None,
+              days: Optional[int] = None, min_level: int = 0) -> int:
+        q = select(func.count()).select_from(PushLog)
+        if monitor:
+            q = q.where(PushLog.monitor == monitor)
+        if min_level:
+            q = q.where(PushLog.max_level >= min_level)
+        if days:
+            since = datetime.utcnow() - timedelta(days=days)
+            q = q.where(PushLog.ts >= since)
+        return int(self.s.execute(q).scalar_one())
 
     def by_id(self, pid: int) -> Optional[PushLog]:
         return self.s.get(PushLog, pid)

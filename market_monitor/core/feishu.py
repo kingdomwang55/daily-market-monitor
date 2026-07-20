@@ -1,6 +1,11 @@
 """飞书推送"""
+import http.client
 import json
+import socket
+import ssl
 import sys
+import time
+import urllib.error
 import urllib.request
 from typing import Optional
 
@@ -8,20 +13,53 @@ from .config import get_config
 from .text_utils import strip_markdown
 from . import push_logger
 
+# 允许自动重试的瞬时网络错误
+_RETRIABLE_EXC = (
+    ssl.SSLError,
+    socket.timeout,
+    TimeoutError,
+    ConnectionError,
+    ConnectionResetError,
+    http.client.RemoteDisconnected,
+    http.client.IncompleteRead,
+    http.client.BadStatusLine,
+    urllib.error.URLError,
+)
+
 
 def _post_json(url: str, payload: dict, headers: Optional[dict] = None,
-               timeout: int = 10) -> dict:
+               timeout: int = 10, retries: int = 3,
+               backoff: tuple = (1.0, 3.0, 7.0)) -> dict:
+    """POST JSON，支持瞬时网络错误自动重试。
+
+    macOS 系统 Python 3.9 用 LibreSSL 2.8.3，偶发 EOF SSL 瞬断，
+    因此对所有网络类异常（SSL/超时/RemoteDisconnected/URLError）做指数退避重试。
+    """
     req_headers = {"Content-Type": "application/json"}
     if headers:
         req_headers.update(headers)
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers=req_headers,
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    last_exc: Optional[Exception] = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, data=body, headers=req_headers, method="POST")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except _RETRIABLE_EXC as e:
+            last_exc = e
+            # urllib.error.HTTPError 是 4xx/5xx，不属于瞬时错误，直接抛出
+            if isinstance(e, urllib.error.HTTPError):
+                raise
+            if attempt >= retries - 1:
+                break
+            wait = backoff[min(attempt, len(backoff) - 1)]
+            print(f"[feishu] 网络异常重试 {attempt + 1}/{retries - 1}: {e}（{wait}s 后重试）",
+                  file=sys.stderr)
+            time.sleep(wait)
+    # 全部重试失败
+    assert last_exc is not None
+    raise last_exc
 
 
 def send_text(message: str, user_id: Optional[str] = None, push_type: str = "manual", meta: Optional[dict] = None) -> bool:

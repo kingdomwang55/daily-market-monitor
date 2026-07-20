@@ -126,7 +126,33 @@ def parse_stock(line: str) -> Optional[Dict]:
 
 
 def parse_us_index(line: str) -> Optional[Dict]:
-    """解析 int_ 美股指数: 名称,现价,涨跌额,涨跌幅"""
+    """解析美股指数。
+
+    兼容两种数据源：
+    - int_ 简易接口：名称,现价,涨跌额,涨跌幅（仅收盘静态，无高低点）
+    - gb_$ 完整接口：名称,现价,涨跌幅,时间,涨跌额,今开,最高,最低,...（含盘中高低点）
+
+    自动探测字段数量：>= 8 字段视为 gb_$ 完整格式，解析出 high/low/open。
+    """
+    m = re.search(r'"([^"]+)"', line)
+    if not m:
+        return None
+    parts = m.group(1).split(",")
+    # gb_$ 完整格式：至少 8 个字段，含高低点
+    if len(parts) >= 8:
+        try:
+            return {
+                "name": parts[0],
+                "close": float(parts[1]),
+                "pct": float(parts[2]),
+                "change": float(parts[4]) if parts[4] else None,
+                "open": float(parts[5]) if parts[5] else None,
+                "high": float(parts[6]) if parts[6] else None,
+                "low": float(parts[7]) if parts[7] else None,
+            }
+        except (ValueError, IndexError):
+            pass
+    # 降级：int_ 简易格式
     return parse_index_simple(line)
 
 

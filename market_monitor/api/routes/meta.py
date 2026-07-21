@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -15,7 +17,7 @@ router = APIRouter(tags=["metadata"])
 
 @router.get("/monitors")
 def monitors_index(
-    enabled: bool | None = Query(default=None),
+    enabled: Optional[bool] = Query(default=None),
     session: Session = Depends(get_db_session),
 ) -> dict:
     rows = RegistryRepository(session).monitors(enabled=enabled)
@@ -35,7 +37,7 @@ def monitors_index(
 
 @router.get("/signal-types")
 def signal_types_index(
-    monitor: str | None = Query(default=None, max_length=64),
+    monitor: Optional[str] = Query(default=None, max_length=64),
     session: Session = Depends(get_db_session),
 ) -> dict:
     return {"items": list_signal_types(session, monitor=monitor)}

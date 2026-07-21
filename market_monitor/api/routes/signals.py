@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
@@ -27,8 +29,8 @@ router = APIRouter(prefix="/signals", tags=["signals"])
 @router.get("")
 def signals_index(
     days: int = Query(default=7, ge=1, le=3650),
-    monitor: str | None = Query(default=None, max_length=64),
-    signal_type: str | None = Query(default=None, alias="type", max_length=64),
+    monitor: Optional[str] = Query(default=None, max_length=64),
+    signal_type: Optional[str] = Query(default=None, alias="type", max_length=64),
     min_level: int = Query(default=0, alias="level", ge=0, le=3),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

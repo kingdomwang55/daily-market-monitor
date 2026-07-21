@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -27,7 +28,7 @@ def _frontend_dist() -> Path:
     return Path(configured).expanduser() if configured else PROJECT_ROOT / "frontend" / "dist"
 
 
-def create_app(frontend_dist: Path | None = None) -> FastAPI:
+def create_app(frontend_dist: Optional[Path] = None) -> FastAPI:
     app = FastAPI(
         title="Daily Market Monitor API",
         version="0.1.0",

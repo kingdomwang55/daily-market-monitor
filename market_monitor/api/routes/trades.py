@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
@@ -21,10 +23,10 @@ router = APIRouter(prefix="/trades", tags=["trades"])
 
 @router.get("")
 def trades_index(
-    status: str | None = Query(default=None, pattern="^(open|closed)$"),
-    symbol: str | None = Query(default=None, max_length=64),
-    strategy: str | None = Query(default=None, max_length=64),
-    days: int | None = Query(default=None, ge=1, le=3650),
+    status: Optional[str] = Query(default=None, pattern="^(open|closed)$"),
+    symbol: Optional[str] = Query(default=None, max_length=64),
+    strategy: Optional[str] = Query(default=None, max_length=64),
+    days: Optional[int] = Query(default=None, ge=1, le=3650),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_db_session),

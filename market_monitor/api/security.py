@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hmac
 import os
+from typing import Optional
 
 from fastapi import Header, HTTPException
 
 
 def require_write_access(
-    authorization: str | None = Header(default=None),
-    x_market_token: str | None = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+    x_market_token: Optional[str] = Header(default=None),
 ) -> None:
     expected = os.getenv("MARKET_WEB_TOKEN")
     if not expected:

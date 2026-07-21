@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/pushes", tags=["pushes"])
 @router.get("")
 def pushes_index(
     days: int = Query(default=7, ge=1, le=3650),
-    monitor: str | None = Query(default=None, max_length=64),
+    monitor: Optional[str] = Query(default=None, max_length=64),
     min_level: int = Query(default=0, alias="level", ge=0, le=3),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

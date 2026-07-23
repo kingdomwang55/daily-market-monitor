@@ -392,3 +392,36 @@ class TradeReview(Base):
     worst_trade_id:   Mapped[Optional[int]]   = mapped_column(Integer, ForeignKey("paper_trade.id"))
     notes:            Mapped[Optional[str]]   = mapped_column(Text)
     generated_at:     Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ═══════════════════════════════════════════════════════
+# Teaching Tips System（每日锦囊库）
+# ═══════════════════════════════════════════════════════
+
+class TeachingTip(Base):
+    """每日锦囊库
+
+    灵活的知识卡片系统，支持分类、标签、难度分级。
+    - 按日期种子随机抽取，避免重复
+    - 支持扩充、编辑、停用
+    - 支持来源标注（公众号文章、书籍、心得等）
+    """
+    __tablename__ = "teaching_tip"
+
+    id:          Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title:       Mapped[str] = mapped_column(String(128), nullable=False)
+    body:        Mapped[str] = mapped_column(Text, nullable=False)
+    category:    Mapped[str] = mapped_column(String(32), nullable=False, default="general")  # general/discipline/indicator/strategy/macro
+    difficulty:  Mapped[int] = mapped_column(Integer, default=1, nullable=False)  # 1=入门, 2=进阶, 3=高级
+    tags_json:   Mapped[Optional[list[str]]] = mapped_column(JSON)  # ['止损','仓位','心理']
+    source:      Mapped[Optional[str]] = mapped_column(String(128))  # 来源：公众号/书籍/心得
+    enabled:     Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at:  Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at:  Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_teaching_tip_category", "category"),
+        Index("idx_teaching_tip_enabled", "enabled"),
+    )

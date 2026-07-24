@@ -169,7 +169,7 @@ def generate_wechat_article(data: dict) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
     date_str = datetime.now().strftime("%Y年%m月%d日")
     cover_url = get_cover_url("bloomberg", "16x9")
-md = f"""---
+    md = f"""---
 title: "{title}"
 summary: "{summary}"
 author: AI边用边想

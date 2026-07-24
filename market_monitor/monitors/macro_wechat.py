@@ -131,7 +131,7 @@ def generate_wechat_article(data: dict, hours: int) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
     date_str = datetime.now().strftime("%Y年%m月%d日")
     cover_url = get_cover_url("macro", "16x9")
-md = f"""---
+    md = f"""---
 title: "全球宏观日报"
 summary: "过去 {hours} 小时全球财经与市场动态精选"
 author: AI边用边想

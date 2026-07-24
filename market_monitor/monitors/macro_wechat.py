@@ -19,6 +19,7 @@ from market_monitor.core.news_sources import fetch_all_categories
 from market_monitor.core.ai import ai_chat
 from market_monitor.core.teaching import get_daily_tip
 from market_monitor.core.compliance import compliance_filter
+from market_monitor.core.cover_utils import get_cover_url
 
 # 每类最多送 AI 的条数
 MAX_PER_CATEGORY = {
@@ -129,17 +130,18 @@ def generate_wechat_article(data: dict, hours: int) -> str:
     # 组装 Markdown
     today = datetime.now().strftime("%Y-%m-%d")
     date_str = datetime.now().strftime("%Y年%m月%d日")
-    md = f"""---
+    cover_url = get_cover_url("macro", "16x9")
+md = f"""---
 title: "全球宏观日报"
 summary: "过去 {hours} 小时全球财经与市场动态精选"
 author: AI边用边想
 date: {today}
-cover: "https://your-cdn.com/macro-cover.png"
+cover: "{cover_url}"
 ---
 
 # 全球宏观日报
 
-![cover](https://your-cdn.com/macro-cover.png)
+![cover]({cover_url})
 
 > 📅 {date_str} · 回溯 {hours} 小时 · 全球财经精选
 

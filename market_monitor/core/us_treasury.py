@@ -37,7 +37,7 @@ _COL_MAP = {
 }
 
 _HEADERS = {
-    "User-Agent": "market-monitor/1.0 (https://github.com/user/market-monitor; contact: local)",
+    "User-Agent": "market-monitor/1.0 (contact: local)",
 }
 
 _TIMEOUT_S = 10

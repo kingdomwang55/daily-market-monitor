@@ -29,7 +29,7 @@
 
 ### 优先处理（P0）
 
-1. **修复 launchd / `gen_launchd.py` 中硬编码的旧用户路径**（当前指向 `$HOME/...`），否则本机安装会静默跑错或跑不起来。
+1. **修复 launchd / `gen_launchd.py` 中硬编码的旧用户路径**（当前指向绝对路径），否则本机安装会静默跑错或跑不起来。
 2. **补齐运行时依赖声明**：`us_treasury.py` 使用 `requests`，但 `pyproject.toml` 未声明；`alembic` 已声明却无迁移工程。
 3. **README / 架构文档与真实 REGISTRY 对齐**（14 个 monitor 中仅约一半出现在 README）。
 

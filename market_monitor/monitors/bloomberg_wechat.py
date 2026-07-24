@@ -16,6 +16,7 @@ from market_monitor.core.bloomberg_sources import fetch_by_category, CATEGORY_LA
 from market_monitor.core.ai import ai_chat
 from market_monitor.core.teaching import get_daily_tip
 from market_monitor.core.compliance import compliance_filter
+from market_monitor.core.cover_utils import get_cover_url
 
 MAX_PER_CATEGORY = {
     "markets":   15,
@@ -167,17 +168,18 @@ def generate_wechat_article(data: dict) -> str:
     # 组装 Markdown——精美排版
     today = datetime.now().strftime("%Y-%m-%d")
     date_str = datetime.now().strftime("%Y年%m月%d日")
-    md = f"""---
+    cover_url = get_cover_url("bloomberg", "16x9")
+md = f"""---
 title: "{title}"
 summary: "{summary}"
 author: AI边用边想
 date: {today}
-cover: "https://your-cdn.com/bloomberg-cover.jpg"
+cover: "{cover_url}"
 ---
 
 # {title}
 
-![cover](https://your-cdn.com/bloomberg-cover.jpg)
+![cover]({cover_url})
 
 > 📅 {date_str} · 回溯 24 小时 · 彭博社全球报道精选
 

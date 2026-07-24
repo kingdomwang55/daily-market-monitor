@@ -20,9 +20,11 @@ if [ -z "${ARTICLE_PATH}" ] || [ ! -f "${ARTICLE_PATH}" ]; then
     exit 0
 fi
 
-# 2. 下载固定封面图
-echo "[publish] 下载固定封面图..."
-curl -s -L "https://your-cdn.com/bloomberg-cover.jpg" -o post-to-wechat/bloomberg-cover.jpg
+# 2. 从数据库读取封面 URL 并下载
+echo "[publish] 读取封面 URL..."
+COVER_URL=$(${VENV_PYTHON} -c "from market_monitor.core.cover_utils import get_cover_url; print(get_cover_url('bloomberg', '16x9'))")
+echo "[publish] 下载封面图..."
+curl -s -L "${COVER_URL}" -o post-to-wechat/bloomberg-cover.jpg
 echo "[publish] 封面图已就绪: post-to-wechat/bloomberg-cover.jpg"
 
 # 3. 推送到微信草稿箱

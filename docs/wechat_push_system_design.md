@@ -10,9 +10,9 @@
 
 | 顺序 | 文章类型 | 微信列表封面 | 文章正文头图 |
 |------|----------|-------------|-------------|
-| 第1篇 | 全球宏观日报 | 16:9 宽屏大图 | 16:9 封面图 |
-| 第2篇 | 彭博社发文日报 | 1:1 正方形缩略 | 16:9 封面图 |
-| 第3篇 | 意见领袖发言日报 | 1:1 正方形缩略 | 16:9 封面图 |
+| 第1篇 | 全球宏观日报 | 16:9 宽屏大图 | 16:9 封面图（从 DB 读取） |
+| 第2篇 | 彭博社发文日报 | 1:1 正方形缩略 | 16:9 封面图（从 DB 读取） |
+| 第3篇 | 意见领袖发言日报 | 1:1 正方形缩略 | 16:9 封面图（从 DB 读取） |
 
 ### 1.3 触发方式
 
@@ -46,29 +46,27 @@
 
 ```
 market-monitor/
-├── market_monitor/monitors/
-│   ├── macro_wechat.py          # 全球宏观日报生成器
-│   ├── bloomberg_wechat.py      # 彭博社发文日报生成器
-│   └── voice_wechat.py          # 意见领袖发言日报生成器
+├── market_monitor/
+│   ├── monitors/
+│   │   ├── macro_wechat.py          # 全球宏观日报生成器
+│   │   ├── bloomberg_wechat.py      # 彭博社发文日报生成器
+│   │   └── voice_wechat.py          # 意见领袖发言日报生成器
+│   └── core/
+│       └── cover_utils.py           # 封面图 URL 读取工具（从 SQLite）
 │
 ├── scripts/
-│   ├── publish_multi_wechat.sh  # ✅ 主入口：三篇连发推送脚本
-│   ├── publish_wechat_drafts.sh # 旧版：单篇推送脚本
-│   ├── publish_bloomberg_wechat.sh # 旧版：单篇彭博推送
-│   │
-│   ├── get_wechat_covers.py     # 从数据库读取封面URL
-│   ├── wechat_cover_manager.py  # 封面URL管理工具
-│   │
-│   ├── gen_bloomberg_cover.py   # （废弃）旧版代码生成彭博封面
-│   └── gen_voice_cover.py       # （废弃）旧版代码生成意见领袖封面
+│   ├── publish_multi_wechat.sh     # ✅ 主入口：三篇连发推送脚本
+│   ├── publish_bloomberg_wechat.sh  # 旧版：单篇彭博推送（仍从 DB 读取 URL）
+│   ├── get_wechat_covers.py         # 从 SQLite 读取封面 URL（shell 调用）
+│   ├── wechat_cover_manager.py      # 封面 URL 管理工具(list/update)
+│   └── gen_voice_cover.py           # （废弃）旧版代码生成意见领袖封面
 │
 ├── sql/
-│   ├── README.md                # SQL脚本说明
-│   └── wechat_cover_images_init.sql # 封面图配置表初始化
+│   ├── README.md                    # SQL 脚本说明 + 数据字典
+│   └── wechat_cover_images_init.sql # 封面图配置表初始化（脱敏）
 │
-└── post-to-wechat/
-    ├── .gitkeep                 # 目录占位（所有文件gitignore）
-    ├── macro-cover.png          # 运行时下载的封面图
+└── post-to-wechat/                  # 运行时目录（gitignore）
+    ├── macro-cover.png              # 运行时下载的封面图
     ├── bloomberg-thumb-1x1.png
     ├── voice-thumb-1x1.png
     └── voice-cover-16x9.png
@@ -190,7 +188,32 @@ date: {today}
     print(out_path)
 ```
 
-### 5.3 正文开头图片插入逻辑
+### 5.3 封面图 URL 读取机制
+
+所有封面图 URL 统一存储在 SQLite `wechat_cover_images` 表中，代码通过统一接口读取：
+
+```python
+# market_monitor/core/cover_utils.py
+from market_monitor.core.cover_utils import get_cover_url
+
+# Python 代码中调用
+cover_url = get_cover_url("bloomberg", "16x9")   # 16:9 正文头图
+thumb_url = get_cover_url("bloomberg", "1x1")     # 1:1 缩略图
+```
+
+```bash
+# Shell 脚本中调用（输出环境变量格式）
+eval $(python3 scripts/get_wechat_covers.py)
+# 或直接内联调用
+COVER_URL=$(python3 -c "from market_monitor.core.cover_utils import get_cover_url; print(get_cover_url('bloomberg', '16x9'))")
+```
+
+**设计要点**：
+- 代码中零硬编码 URL，全部从数据库读取
+- 真实 URL 只存在于 `data/market.db`（被 `.gitignore` 排除）
+- 迁移脚本和 SQL 初始化脚本使用脱敏占位符
+
+### 5.4 正文开头图片插入逻辑
 
 第三篇（voice）在文章正文开头插入 16:9 封面图：
 
@@ -280,9 +303,9 @@ python scripts/wechat_cover_manager.py update voice cover_url_16x9 https://xxx.p
 
 | 阶段 | 存储方式 | 问题 |
 |------|---------|------|
-| v1 | 硬编码在脚本里 | 改 URL 要改代码，易出错 |
+| v1 | 硬编码在脚本里 | 改 URL 要改代码，易出错，且会暴露真实 CDN URL |
 | v2 | `.env` 配置文件 | 无法追踪历史，无统一管理 |
-| v3 ✅ | SQLite 数据库 `wechat_cover_images` | 统一管理、可审计、可加字段 |
+| v3 ✅ | SQLite 数据库 `wechat_cover_images` + `cover_utils.py` 统一读取 | 统一管理、可审计、代码零硬编码 URL |
 
 ### 8.2 封面图生成方式演进
 

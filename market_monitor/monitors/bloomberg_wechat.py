@@ -244,9 +244,12 @@ def _compliance_filter(text: str) -> str:
                 filtered.append(line)
             # 否则跳过这行
         else:
-            # 非条目行（标题、影响、标的等）也检查敏感词
-            if any(term in line for term in sensitive_terms) and not line.strip().startswith('#'):
-                # 综合观察段中的敏感词，用中性表述替换
+            # 非条目行也检查敏感词，但跳过标题行（## 开头）
+            stripped = line.strip()
+            if stripped.startswith('#'):
+                # 标题行直接保留（## Trump 等分类标题不过滤）
+                filtered.append(line)
+            elif any(term in line for term in sensitive_terms):
                 line_safe = line
                 for term in sensitive_terms:
                     if term in line_safe:

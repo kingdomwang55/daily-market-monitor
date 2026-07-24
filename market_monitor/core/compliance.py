@@ -13,7 +13,7 @@ from .ai import ai_chat
 def _soft_sensitive_filter(text: str) -> str:
     """软过滤：只删除特别敏感的条目，其余改写中性表述"""
     
-    # 极度敏感关键词（命中则整段移除）——只保留最核心的政治敏感
+    # 极度敏感关键词（命中则整段移除）--只保留最核心的政治敏感
     ultra_sensitive = [
         # 核心政治人物
         '习近平', '李克强', '王毅', '秦刚',
@@ -76,16 +76,38 @@ def _soft_sensitive_filter(text: str) -> str:
     lines = text.split('\n')
     result = []
     skip_block = False
+    is_summary_section = False
     
     for line in lines:
-        # 检测新条目开始（[时间] 格式）
-        is_new_item = line.strip().startswith('[') and ']' in line[:30]
+        stripped = line.strip()
+        
+        # 标题行跳过所有敏感词处理
+        if stripped.startswith('#'):
+            # 追踪是否进入综合观察段落
+            is_summary_section = '综合观察' in stripped
+            result.append(line)
+            continue
+        
+        # 综合观察段落：只做软替换，不删除
+        if is_summary_section and stripped:
+            for old, new in replace_map.items():
+                line = line.replace(old, new)
+            result.append(line)
+            continue
+        
+        # 检测新条目开始
+        is_new_item = stripped.startswith('[') and ']' in stripped[:30]
         
         if is_new_item:
-            # 检查这条是否极度敏感
-            skip_block = any(term in line for term in ultra_sensitive)
+            skip_block = any(term in stripped for term in ultra_sensitive)
         
         if skip_block:
+            if is_new_item and not any(term in stripped for term in ultra_sensitive):
+                skip_block = False
+                # 替换敏感表述
+                for old, new in replace_map.items():
+                    line = line.replace(old, new)
+                result.append(line)
             continue
         
         # 替换敏感表述
@@ -94,7 +116,13 @@ def _soft_sensitive_filter(text: str) -> str:
         
         result.append(line)
     
-    return '\n'.join(result)
+    result = '\n'.join(result)
+    
+    # 压缩多余空行（最多保留1个空行作为段落分隔）
+    import re
+    result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+    
+    return result
 
 
 def _ai_compliance_review(text: str) -> Optional[str]:

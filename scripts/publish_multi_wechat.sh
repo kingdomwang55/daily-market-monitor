@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# 全球宏观日报 + Bloomberg 日报 -> 微信公众号草稿箱（多文章一次推送）
-# 封面配置：
-#   - 第一篇（全球宏观）缩略图：16:9（公众号列表）
-#   - 第一篇正文开头：16:9
-#   - 第二篇（彭博）缩略图：1:1
-#   - 第二篇正文开头：16:9
+# 微信公众号草稿箱批量推送（三篇）
+# 第1篇：全球宏观日报（16:9 封面）
+# 第2篇：彭博社发文日报（1:1 封面）
+# 第3篇：意见领袖发言日报（1:1 封面，代码生成）
 # 每天 08:00 自动推送
 set -euo pipefail
 
@@ -14,8 +12,9 @@ PROJECT_DIR="$(pwd)"
 # 激活 venv
 source .venv/bin/activate
 VENV_PYTHON="$(pwd)/.venv/bin/python"
+SYSTEM_PYTHON="/usr/local/bin/python3"
 
-# ===== 1. 生成两篇文章 Markdown =====
+# ===== 1. 生成三篇文章 Markdown =====
 echo "[publish] 生成全球宏观日报..."
 MACRO_PATH=$(${VENV_PYTHON} -m market_monitor.monitors.macro_wechat)
 echo "[publish] 宏观文章: ${MACRO_PATH}"
@@ -24,29 +23,50 @@ echo "[publish] 生成 Bloomberg 日报..."
 BLOOMBERG_PATH=$(${VENV_PYTHON} -m market_monitor.monitors.bloomberg_wechat)
 echo "[publish] Bloomberg 文章: ${BLOOMBERG_PATH}"
 
+echo "[publish] 生成意见领袖日报..."
+VOICE_PATH=$(${VENV_PYTHON} -m market_monitor.monitors.voice_wechat)
+echo "[publish] 意见领袖文章: ${VOICE_PATH}"
+
+# 有效性检查
 if [ -z "${MACRO_PATH}" ] || [ ! -f "${MACRO_PATH}" ]; then
-    echo "[publish] 宏观文章生成失败，只推 Bloomberg"
+    echo "[publish] 宏观文章生成失败，跳过"
     MACRO_PATH=""
 fi
 if [ -z "${BLOOMBERG_PATH}" ] || [ ! -f "${BLOOMBERG_PATH}" ]; then
-    echo "[publish] Bloomberg 文章生成失败，退出"
+    echo "[publish] Bloomberg 文章生成失败，跳过"
+    BLOOMBERG_PATH=""
+fi
+if [ -z "${VOICE_PATH}" ] || [ ! -f "${VOICE_PATH}" ]; then
+    echo "[publish] 意见领袖文章生成失败，跳过"
+    VOICE_PATH=""
+fi
+
+if [ -z "${MACRO_PATH}" ] && [ -z "${BLOOMBERG_PATH}" ] && [ -z "${VOICE_PATH}" ]; then
+    echo "[publish] 所有文章生成失败，退出"
     exit 0
 fi
 
-# ===== 2. 下载封面图 =====
-echo "[publish] 下载封面图..."
+# ===== 2. 准备封面图（从 SQLite 读取）=====
+echo "[publish] 从数据库加载封面 URL..."
 
-# 全球宏观：16:9 封面（公众号列表缩略图 + 正文开头）
-MACRO_COVER_16_9="https://your-cdn.com/macro-cover.png"
+# 从 SQLite 读取封面 URL 并导出到环境变量
+eval $(${SYSTEM_PYTHON} scripts/get_wechat_covers.py)
+echo "[publish] 封面 URL 已加载"
+
+# 全球宏观：16:9 封面（公众号第一篇列表图）
 curl -s -L "${MACRO_COVER_16_9}" -o post-to-wechat/macro-cover.png
 echo "[publish] 宏观封面 16:9 就绪"
 
-# 彭博缩略图：1:1（公众号第二篇缩略图）
-BLOOMBERG_COVER_1_1="https://your-cdn.com/bloomberg-thumb.png"
+# 彭博缩略图：1:1（第二篇）
 curl -s -L "${BLOOMBERG_COVER_1_1}" -o post-to-wechat/bloomberg-thumb-1x1.png
-echo "[publish] 彭博缩略图 1:1 就绪"
+echo "[publish] 彭博封面 1:1 就绪"
 
-# ===== 3. 渲染两篇文章 HTML =====
+# 意见领袖：1:1 缩略图（第三篇封面）+ 16:9 正文开头图
+curl -s -L "${VOICE_COVER_1_1}" -o post-to-wechat/voice-thumb-1x1.png
+curl -s -L "${VOICE_COVER_16_9}" -o post-to-wechat/voice-cover-16x9.png
+echo "[publish] 意见领袖 1:1 缩略图 + 16:9 正文图就绪"
+
+# ===== 3. 渲染所有文章 HTML =====
 SKILL_DIR="${HOME}/.openclaw/workspace/skills/baoyu-skills/skills/baoyu-post-to-wechat"
 
 if [ -n "${MACRO_PATH}" ]; then
@@ -58,25 +78,37 @@ if [ -n "${MACRO_PATH}" ]; then
     echo "[publish] 宏观 HTML 渲染完成"
 fi
 
-echo "[publish] 渲染 Bloomberg 文章 HTML..."
-BLOOMBERG_JSON=$(bun "${SKILL_DIR}/scripts/md-to-wechat.ts" \
-    "${BLOOMBERG_PATH}" \
-    --theme default \
-    --color blue 2>/dev/null)
-echo "[publish] Bloomberg HTML 渲染完成"
+if [ -n "${BLOOMBERG_PATH}" ]; then
+    echo "[publish] 渲染 Bloomberg 文章 HTML..."
+    BLOOMBERG_JSON=$(bun "${SKILL_DIR}/scripts/md-to-wechat.ts" \
+        "${BLOOMBERG_PATH}" \
+        --theme default \
+        --color blue 2>/dev/null)
+    echo "[publish] Bloomberg HTML 渲染完成"
+fi
 
-# ===== 4. 用 Node 脚本组装多文章并推送 =====
+if [ -n "${VOICE_PATH}" ]; then
+    echo "[publish] 渲染意见领袖文章 HTML..."
+    VOICE_JSON=$(bun "${SKILL_DIR}/scripts/md-to-wechat.ts" \
+        "${VOICE_PATH}" \
+        --theme default \
+        --color blue 2>/dev/null)
+    echo "[publish] 意见领袖 HTML 渲染完成"
+fi
+
+# ===== 4. 组装多文章并推送到草稿箱 =====
 echo "[publish] 组装多文章并推送到微信草稿箱..."
 
-# 读取凭证
 APP_ID=$(grep WECHAT_APP_ID ~/.baoyu-skills/.env | cut -d= -f2 | tr -d '"')
 APP_SECRET=$(grep WECHAT_APP_SECRET ~/.baoyu-skills/.env | cut -d= -f2 | tr -d '"')
 
-# 导出变量给 Node 脚本
-export BLOOMBERG_JSON
 export MACRO_JSON="${MACRO_JSON:-}"
-export MACRO_COVER="post-to-wechat/macro-cover.png"         # 16:9（第一篇缩略图）
-export BLOOMBERG_COVER="post-to-wechat/bloomberg-thumb-1x1.png"  # 1:1（第二篇缩略图）
+export BLOOMBERG_JSON="${BLOOMBERG_JSON:-}"
+export VOICE_JSON="${VOICE_JSON:-}"
+export MACRO_COVER="post-to-wechat/macro-cover.png"
+export BLOOMBERG_COVER="post-to-wechat/bloomberg-thumb-1x1.png"
+export VOICE_COVER="post-to-wechat/voice-thumb-1x1.png"
+export VOICE_BODY_COVER="post-to-wechat/voice-cover-16x9.png"
 export APP_ID
 export APP_SECRET
 export PROJECT_DIR
@@ -90,7 +122,6 @@ const APP_ID = process.env.APP_ID;
 const APP_SECRET = process.env.APP_SECRET;
 const PROJECT_DIR = process.env.PROJECT_DIR;
 
-// 微信 API
 const DRAFT_URL = "https://api.weixin.qq.com/cgi-bin/draft/add";
 const TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
 
@@ -130,11 +161,10 @@ async function uploadBodyImage(imagePath, accessToken) {
     return data.url;
 }
 
-async function processArticle(jsonStr, coverPath, accessToken, label) {
+async function processArticle(jsonStr, coverPath, accessToken, label, bodyCoverPath = null) {
     const parsed = JSON.parse(jsonStr);
     let html = fs.readFileSync(parsed.htmlPath, "utf-8");
 
-    // 替换正文图片占位符
     if (parsed.contentImages && parsed.contentImages.length > 0) {
         for (const img of parsed.contentImages) {
             if (!html.includes(img.placeholder)) continue;
@@ -145,7 +175,20 @@ async function processArticle(jsonStr, coverPath, accessToken, label) {
         }
     }
 
-    // 上传缩略图封面
+    // 意见领袖文章：在正文开头插入 16:9 封面图
+    if (bodyCoverPath) {
+        console.error(`[wechat] [${label}] Uploading body cover (16:9): ${bodyCoverPath}`);
+        const bodyCoverUrl = await uploadBodyImage(bodyCoverPath, accessToken);
+        const bodyCoverHtml = `<img src="${bodyCoverUrl}" style="display: block; width: 100%; margin: 0 auto 1.5em auto; border-radius: 8px;">`;
+        // 在 h1 标题之后插入
+        const h1EndIndex = html.indexOf("</h1>");
+        if (h1EndIndex > -1) {
+            html = html.slice(0, h1EndIndex + 5) + bodyCoverHtml + html.slice(h1EndIndex + 5);
+        } else {
+            html = bodyCoverHtml + html;
+        }
+    }
+
     console.error(`[wechat] [${label}] Uploading thumb cover: ${coverPath}`);
     const coverResp = await uploadImage(coverPath, accessToken);
     console.error(`[wechat] [${label}] Cover uploaded: ${coverResp.media_id}`);
@@ -166,29 +209,37 @@ async function main() {
 
     const articles = [];
 
-    // 第一篇：全球宏观（16:9 缩略图）
     if (process.env.MACRO_JSON) {
-        console.error("[wechat] Processing article 1: 全球宏观日报...");
-        const article1 = await processArticle(
+        console.error("[wechat] Article 1: 全球宏观日报...");
+        articles.push(await processArticle(
             process.env.MACRO_JSON,
             path.join(PROJECT_DIR, process.env.MACRO_COVER),
             accessToken,
             "Macro"
-        );
-        articles.push(article1);
+        ));
     }
 
-    // 第二篇：彭博（1:1 缩略图）
-    console.error("[wechat] Processing article 2: 彭博社发文日报...");
-    const article2 = await processArticle(
-        process.env.BLOOMBERG_JSON,
-        path.join(PROJECT_DIR, process.env.BLOOMBERG_COVER),
-        accessToken,
-        "Bloomberg"
-    );
-    articles.push(article2);
+    if (process.env.BLOOMBERG_JSON) {
+        console.error("[wechat] Article 2: 彭博社发文日报...");
+        articles.push(await processArticle(
+            process.env.BLOOMBERG_JSON,
+            path.join(PROJECT_DIR, process.env.BLOOMBERG_COVER),
+            accessToken,
+            "Bloomberg"
+        ));
+    }
 
-    // 推送到草稿箱
+    if (process.env.VOICE_JSON) {
+        console.error("[wechat] Article 3: 意见领袖发言日报...");
+        articles.push(await processArticle(
+            process.env.VOICE_JSON,
+            path.join(PROJECT_DIR, process.env.VOICE_COVER),
+            accessToken,
+            "Voice",
+            path.join(PROJECT_DIR, process.env.VOICE_BODY_COVER)
+        ));
+    }
+
     console.error(`[wechat] Publishing ${articles.length} articles to draft...`);
     const res = await fetch(`${DRAFT_URL}?access_token=${accessToken}`, {
         method: "POST",
